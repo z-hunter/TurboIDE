@@ -657,7 +657,15 @@ size_t countLines(const std::filesystem::path &file) {
 }
 
 std::wstring normalizedPathKey(const std::filesystem::path &file) {
-    return std::filesystem::absolute(file).lexically_normal().wstring();
+    const auto absolute = std::filesystem::absolute(file).lexically_normal();
+    std::wstring result(32768, L'\0');
+    const DWORD length = GetLongPathNameW(absolute.c_str(), result.data(),
+                                           static_cast<DWORD>(result.size()));
+    if (length && length < result.size())
+        result.resize(length);
+    else
+        result = absolute.wstring();
+    return result;
 }
 
 int editorCurrentLine(TFileEditor *editor) {
@@ -809,6 +817,8 @@ public:
         drawView();
     }
 
+    TPalette &getPalette() const override { return ideTheme().messagesList; }
+
 private:
     const std::vector<DebugVariable> *variables_;
 };
@@ -821,6 +831,7 @@ public:
           TWindow(bounds, "Locals", windowNumber), app_(app) {
         list_ = new DebugVariableList(TRect(1, 1, size.x - 1, size.y - 1), variables);
         insert(list_);
+        list_->updateVariables();
     }
 
     void updateVariables() { list_->updateVariables(); }
@@ -849,6 +860,7 @@ public:
         std::snprintf(dest, static_cast<size_t>(maxLen) + 1, "%s", text.c_str());
     }
     void refresh() { setRange(static_cast<short>(std::max<size_t>(1, variables_->size()))); drawView(); }
+    TPalette &getPalette() const override { return ideTheme().messagesList; }
 private:
     const std::vector<DebugVariable> *variables_;
 };
@@ -860,6 +872,7 @@ public:
         : TWindowInit(&TWindow::initFrame), TWindow(bounds, "Watches", windowNumber), app_(app) {
         list_ = new DebugWatchList(TRect(1, 1, size.x - 1, size.y - 1), variables);
         insert(list_);
+        list_->refresh();
     }
     void refresh() { list_->refresh(); }
     void handleEvent(TEvent &event) override {
@@ -2182,14 +2195,14 @@ void TurboIDEApp::navigateMessage(bool forward) {
 }
 
 bool TurboIDEApp::goToLocation(const std::filesystem::path &file, int line, int column) {
-    const auto target = std::filesystem::absolute(file).lexically_normal();
+    const auto target = std::filesystem::path(normalizedPathKey(file));
     TEditWindow *editorWindow = nullptr;
     for (TView *view = deskTop->first(); view; view = view->nextView()) {
         auto *candidate = dynamic_cast<TEditWindow *>(view);
         if (!candidate || !candidate->editor->fileName[0])
             continue;
-        const auto current = std::filesystem::absolute(
-            std::filesystem::u8path(candidate->editor->fileName)).lexically_normal();
+        const auto current = std::filesystem::path(normalizedPathKey(
+            std::filesystem::u8path(candidate->editor->fileName)));
         if (_wcsicmp(current.c_str(), target.c_str()) == 0) {
             editorWindow = candidate;
             break;
@@ -2203,8 +2216,8 @@ bool TurboIDEApp::goToLocation(const std::filesystem::path &file, int line, int 
             auto *candidate = dynamic_cast<TEditWindow *>(view);
             if (!candidate || !candidate->editor->fileName[0])
                 continue;
-            const auto current = std::filesystem::absolute(
-                std::filesystem::u8path(candidate->editor->fileName)).lexically_normal();
+            const auto current = std::filesystem::path(normalizedPathKey(
+                std::filesystem::u8path(candidate->editor->fileName)));
             if (_wcsicmp(current.c_str(), target.c_str()) == 0) {
                 editorWindow = candidate;
                 break;

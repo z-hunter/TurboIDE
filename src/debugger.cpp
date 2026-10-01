@@ -68,6 +68,18 @@ std::string miQuote(const std::string &value) {
     return result;
 }
 
+bool isSimpleWatchIdentifier(const std::string &expression) {
+    if (expression.empty() ||
+        !((expression[0] >= 'A' && expression[0] <= 'Z') ||
+          (expression[0] >= 'a' && expression[0] <= 'z') || expression[0] == '_'))
+        return false;
+    for (const char ch : expression)
+        if (!((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+              (ch >= '0' && ch <= '9') || ch == '_'))
+            return false;
+    return true;
+}
+
 std::wstring fromUtf8(const std::string &value) {
     if (value.empty()) return {};
     const int needed = MultiByteToWideChar(CP_UTF8, 0, value.data(),
@@ -315,6 +327,8 @@ bool GdbSession::start(const std::filesystem::path &executable,
     error.clear();
     userScreen_ = userScreen;
     consoleInput_ = consoleInput;
+    supportsMayCallFunctions_ = false;
+    mayCallFunctionsEnabled_ = true;
 
     processJob_ = CreateJobObjectW(nullptr, nullptr);
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION jobLimits{};
@@ -377,10 +391,24 @@ bool GdbSession::start(const std::filesystem::path &executable,
     std::string reply;
     if (!sendCommand("-gdb-set pagination off", reply, error) ||
         !sendCommand("-gdb-set confirm off", reply, error) ||
-        !sendCommand("-gdb-set may-call-functions on", reply, error) ||
         !sendCommand("-gdb-set may-write-memory on", reply, error) ||
         !sendCommand("-gdb-set may-write-registers on", reply, error) ||
         !sendCommand("-file-exec-and-symbols " + miQuote(utf8(executable.wstring())), reply, error)) {
+        error = "GDB setup failed: " + error;
+        stop(error);
+        return false;
+    }
+    std::string featureError;
+    if (sendCommand("-gdb-show may-call-functions", reply, featureError)) {
+        supportsMayCallFunctions_ = true;
+        mayCallFunctionsEnabled_ = stringAttribute(reply, "value") != "off";
+    }
+    std::string sourceFilesReply;
+    std::string sourceFilesError;
+    if (sendCommand("-file-list-exec-source-files", sourceFilesReply, sourceFilesError) &&
+        sourceFilesReply.find("files=[]") != std::string::npos) {
+        error = "GDB loaded the executable but found no source debug information: " +
+            executable.u8string() + ". Rebuild with a GCC/GDB-compatible toolchain.";
         stop(error);
         return false;
     }
@@ -404,7 +432,9 @@ bool GdbSession::start(const std::filesystem::path &executable,
             attachStopped = true;
         } else if (line.rfind(attachToken + "^error", 0) == 0) {
             error = stringAttribute(line, "msg");
-            if (error.empty()) error = "GDB could not attach to the debuggee.";
+            error = "GDB failed while attaching to the debuggee (PID " +
+                std::to_string(target.dwProcessId) + "): " +
+                (error.empty() ? "unknown GDB error" : error);
             break;
         } else {
             pendingLines_.push_back(std::move(line));
@@ -427,6 +457,7 @@ bool GdbSession::start(const std::filesystem::path &executable,
     }
     std::string continueReply;
     if (!sendCommand("-exec-continue", continueReply, error)) {
+        error = "GDB could not start the debuggee: " + error;
         stop(error);
         return false;
     }
@@ -442,15 +473,20 @@ bool GdbSession::start(const std::filesystem::path &executable,
 bool GdbSession::setBreakpoints(const std::vector<DebugBreakpoint> &breakpoints,
                                std::string &error) {
     std::string reply;
-    if (!sendCommand("-break-delete", reply, error) ||
-        !insertBreakpoint("main", true, error))
+    if (!sendCommand("-break-delete", reply, error))
         return false;
+    if (!insertBreakpoint("main", true, error)) {
+        error = "GDB could not set its initial breakpoint at main: " + error;
+        return false;
+    }
     for (const auto &breakpoint : breakpoints) {
         if (breakpoint.line <= 0) continue;
         const auto fullPath = std::filesystem::absolute(breakpoint.file).lexically_normal();
         const std::string location = utf8(fullPath.wstring()) + ":" + std::to_string(breakpoint.line);
-        if (!insertBreakpoint(location, false, error))
+        if (!insertBreakpoint(location, false, error)) {
+            error = "GDB could not set breakpoint at " + location + ": " + error;
             return false;
+        }
     }
     return true;
 }
@@ -501,14 +537,21 @@ bool GdbSession::evaluate(const std::string &expression, std::string &value,
     error.clear();
     value.clear();
     if (running_) { error = "Watches can only be evaluated while the program is stopped."; return false; }
+    if (expression.find('$') != std::string::npos) {
+        error = "Register expressions are not allowed in Watches.";
+        return false;
+    }
+    if (!supportsMayCallFunctions_ && !isSimpleWatchIdentifier(expression)) {
+        error = "This GDB cannot disable function calls; on this version, Watches support simple variable names only.";
+        return false;
+    }
     std::string reply, firstError;
     const auto set = [&](const char *setting, bool enabled, std::string &why) {
         std::string ignored;
         return sendCommand(std::string("-gdb-set ") + setting + (enabled ? " on" : " off"), ignored, why);
     };
-    if (!set("may-call-functions", false, firstError) ||
-        !set("may-write-memory", false, firstError) ||
-        !set("may-write-registers", false, firstError)) {
+    if ((supportsMayCallFunctions_ && !set("may-call-functions", false, firstError)) ||
+        !set("may-write-memory", false, firstError)) {
         error = firstError;
     } else {
         sendCommand("-data-evaluate-expression " + miQuote(expression), reply, error);
@@ -519,10 +562,10 @@ bool GdbSession::evaluate(const std::string &expression, std::string &value,
         }
     }
     std::string restoreError;
-    const bool callsRestored = set("may-call-functions", true, restoreError);
+    const bool callsRestored = !supportsMayCallFunctions_ ||
+        set("may-call-functions", mayCallFunctionsEnabled_, restoreError);
     const bool memoryRestored = set("may-write-memory", true, restoreError);
-    const bool registersRestored = set("may-write-registers", true, restoreError);
-    if (!callsRestored || !memoryRestored || !registersRestored) {
+    if (!callsRestored || !memoryRestored) {
         error = "Could not restore GDB's write permissions: " + restoreError;
         return false;
     }

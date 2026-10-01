@@ -77,4 +77,6 @@ private:
     unsigned token_ = 1;
     bool running_ = false;
     bool handlerRegistered_ = false;
+    bool supportsMayCallFunctions_ = false;
+    bool mayCallFunctionsEnabled_ = true;
 };
