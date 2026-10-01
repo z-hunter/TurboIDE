@@ -1,0 +1,7 @@
+.build/
+.deps/
+.vs/
+out/
+.turboide-build/
+*.user
+*.suo
