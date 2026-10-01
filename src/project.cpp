@@ -130,11 +130,6 @@ bool loadProject(const std::filesystem::path &file, Project &project, std::strin
         error = "Error while reading project file.";
         return false;
     }
-    if (loaded.sources.empty()) {
-        error = "Project has no source= entries.";
-        return false;
-    }
-
     project = std::move(loaded);
     error.clear();
     return true;

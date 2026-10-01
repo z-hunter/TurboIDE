@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <string>
+#include <utility>
 #include <vector>
 
 struct DesktopRect {
@@ -23,6 +24,8 @@ struct DesktopSession {
     DesktopRect projectBounds;
     std::vector<EditorSession> editors;
     std::filesystem::path activeFile;
+    std::vector<std::pair<std::filesystem::path, int>> breakpoints;
+    std::vector<std::string> watches;
 };
 
 std::filesystem::path desktopSessionFile(const std::filesystem::path &projectFile);

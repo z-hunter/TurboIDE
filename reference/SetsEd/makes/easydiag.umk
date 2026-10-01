@@ -1,0 +1,108 @@
+#!/usr/bin/make
+# Automatically generated from RHIDE projects, don't edit
+#
+
+libeasyd$(ExLIB):: \
+	obj/lablchek$(ExOBJ) \
+	obj/lablradi$(ExOBJ) \
+	obj/snostate$(ExOBJ) \
+	obj/tcheck2$(ExOBJ) \
+	obj/tmiclust$(ExOBJ) \
+	obj/tsbutton$(ExOBJ) \
+	obj/tschkarr$(ExOBJ) \
+	obj/tschkbox$(ExOBJ) \
+	obj/tshscrol$(ExOBJ) \
+	obj/tshzgrp$(ExOBJ) \
+	obj/tsinplin$(ExOBJ) \
+	obj/tsinplpi$(ExOBJ) \
+	obj/tslabel$(ExOBJ) \
+	obj/tslider$(ExOBJ) \
+	obj/tslistbo$(ExOBJ) \
+	obj/tsradbot$(ExOBJ) \
+	obj/tssortlb$(ExOBJ) \
+	obj/tssosslb$(ExOBJ) \
+	obj/tstatext$(ExOBJ) \
+	obj/tstextsc$(ExOBJ) \
+	obj/tstsorlb$(ExOBJ) \
+	obj/tsvegrp$(ExOBJ) \
+	obj/tsview$(ExOBJ) \
+	obj/tsviewco$(ExOBJ) \
+	obj/ttextscr$(ExOBJ) \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_ARCHIVE)
+
+obj/lablchek$(ExOBJ):: ../easydiag/lablchek.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/lablradi$(ExOBJ):: ../easydiag/lablradi.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/snostate$(ExOBJ):: ../easydiag/snostate.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tcheck2$(ExOBJ):: ../easydiag/tcheck2.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tmiclust$(ExOBJ):: ../easydiag/tmiclust.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tsbutton$(ExOBJ):: ../easydiag/tsbutton.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tschkarr$(ExOBJ):: ../easydiag/tschkarr.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tschkbox$(ExOBJ):: ../easydiag/tschkbox.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tshscrol$(ExOBJ):: ../easydiag/tshscrol.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tshzgrp$(ExOBJ):: ../easydiag/tshzgrp.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tsinplin$(ExOBJ):: ../easydiag/tsinplin.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tsinplpi$(ExOBJ):: ../easydiag/tsinplpi.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tslabel$(ExOBJ):: ../easydiag/tslabel.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tslider$(ExOBJ):: ../easydiag/tslider.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tslistbo$(ExOBJ):: ../easydiag/tslistbo.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tsradbot$(ExOBJ):: ../easydiag/tsradbot.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tssortlb$(ExOBJ):: ../easydiag/tssortlb.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tssosslb$(ExOBJ):: ../easydiag/tssosslb.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tstatext$(ExOBJ):: ../easydiag/tstatext.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tstextsc$(ExOBJ):: ../easydiag/tstextsc.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tstsorlb$(ExOBJ):: ../easydiag/tstsorlb.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tsvegrp$(ExOBJ):: ../easydiag/tsvegrp.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tsview$(ExOBJ):: ../easydiag/tsview.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tsviewco$(ExOBJ):: ../easydiag/tsviewco.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/ttextscr$(ExOBJ):: ../easydiag/ttextscr.cc  
+	$(RHIDE_COMPILE_CC)
+

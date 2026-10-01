@@ -1,0 +1,58 @@
+#!/usr/bin/make
+
+##########################################################################################
+#
+# Beggining of maintained lines
+#
+##########################################################################################
+#
+# Source directories
+#
+vpath_src=../install ../easydiag ../settvuti ../settvuti/names ../settvuti/streams
+#
+# Include directories
+#
+INCLUDE_DIR=../include
+SETEDIT_INC_DIR=../setedit/include
+SETTVUTI_INC_DIR=../settvuti/include
+SDG_INC_DIR=../sdg/include
+INFVIEW_INC_DIR=../infview/include
+EXTRA_INC_DIR=../extra
+EASYDIAG_INC_DIR=../easydiag
+LIBRHUTI_INC_DIR=../librhuti
+MP3_INC_DIR=../mp3
+CALCU_INC_DIR=../calcu
+INCLUDE_DIRS=$(INCLUDE_DIR) $(SETEDIT_INC_DIR) $(SETTVUTI_INC_DIR) \
+	$(SDG_INC_DIR) $(INFVIEW_INC_DIR) $(TVISION_INC) $(EXTRA_INC_DIR) \
+	$(EASYDIAG_INC_DIR) $(LIBRHUTI_INC_DIR) $(SUPPORT_INC) \
+	$(MP3_INC_DIR) $(CALCU_INC_DIR)
+
+##########################################################################################
+#
+# Beggining of fixed part
+#
+##########################################################################################
+
+#
+# Common rules used by RHIDE.
+# It also includes rhide.env.
+#
+include common.imk
+# This is specific for this project
+RHIDE_OS_LIBS:=$(RHIDE_OS_LIBS) -lwin
+
+#
+# All the RHIDE data should come from here.
+#
+ifdef MAINTAINER_MODE
+ ExIMK=.imk
+else
+ ExIMK=.umk
+endif
+include install$(ExIMK)
+
+#
+# This file pulls all the .imk
+#
+include includer.imk
+

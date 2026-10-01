@@ -1,0 +1,68 @@
+#!/usr/bin/make
+# Automatically generated from RHIDE projects, don't edit
+#
+
+../../makes/djgpp/libamp$(ExLIB):: \
+	obj/audioalg$(ExOBJ) \
+	obj/audiolib$(ExOBJ) \
+	obj/dump$(ExOBJ) \
+	obj/formats$(ExOBJ) \
+	obj/getbits$(ExOBJ) \
+	obj/getdata$(ExOBJ) \
+	obj/guicontr$(ExOBJ) \
+	obj/huffman$(ExOBJ) \
+	obj/layer2$(ExOBJ) \
+	obj/layer3$(ExOBJ) \
+	obj/misc2$(ExOBJ) \
+	obj/position$(ExOBJ) \
+	obj/rtbuf$(ExOBJ) \
+	obj/transfor$(ExOBJ) \
+	obj/util$(ExOBJ) \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_ARCHIVE)
+
+obj/audioalg$(ExOBJ):: audioalg.c  
+	$(RHIDE_COMPILE_C)
+
+obj/audiolib$(ExOBJ):: audiolib.c  
+	$(RHIDE_COMPILE_C)
+
+obj/dump$(ExOBJ):: dump.c  
+	$(RHIDE_COMPILE_C)
+
+obj/formats$(ExOBJ):: formats.c  
+	$(RHIDE_COMPILE_C)
+
+obj/getbits$(ExOBJ):: getbits.c  
+	$(RHIDE_COMPILE_C)
+
+obj/getdata$(ExOBJ):: getdata.c  
+	$(RHIDE_COMPILE_C)
+
+obj/guicontr$(ExOBJ):: guicontr.c  
+	$(RHIDE_COMPILE_C)
+
+obj/huffman$(ExOBJ):: huffman.c  
+	$(RHIDE_COMPILE_C)
+
+obj/layer2$(ExOBJ):: layer2.c  
+	$(RHIDE_COMPILE_C)
+
+obj/layer3$(ExOBJ):: layer3.c  
+	$(RHIDE_COMPILE_C)
+
+obj/misc2$(ExOBJ):: misc2.c  
+	$(RHIDE_COMPILE_C)
+
+obj/position$(ExOBJ):: position.c  
+	$(RHIDE_COMPILE_C)
+
+obj/rtbuf$(ExOBJ):: rtbuf.c  
+	$(RHIDE_COMPILE_C)
+
+obj/transfor$(ExOBJ):: transfor.c  
+	$(RHIDE_COMPILE_C)
+
+obj/util$(ExOBJ):: util.c  
+	$(RHIDE_COMPILE_C)
+

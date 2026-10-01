@@ -6,6 +6,7 @@
 struct IDESettings {
     int tabSize = 8;
     std::string defaultExtension = ".c";
+    std::filesystem::path currentDirectory;
     std::filesystem::path lastProject;
 };
 

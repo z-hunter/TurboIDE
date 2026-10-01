@@ -19,9 +19,13 @@ struct DebugVariable {
 
 struct DebugStop {
     std::string reason;
+    std::string signalName;
+    std::string signalMeaning;
     std::filesystem::path file;
     int line = 0;
     bool exited = false;
+    int exitCode = 0;
+    bool hasExitCode = false;
 };
 
 class GdbSession {
@@ -43,6 +47,7 @@ public:
     bool setBreakpoints(const std::vector<DebugBreakpoint> &breakpoints,
                         std::string &error);
     std::vector<DebugVariable> locals(std::string &error);
+    bool evaluate(const std::string &expression, std::string &value, std::string &error);
     bool stop(std::string &error);
     bool active() const { return usable(gdbProcess_); }
     bool running() const { return running_; }
@@ -56,7 +61,6 @@ private:
     bool executeAndWait(const char *command, DebugStop &stop, std::string &error);
     bool insertBreakpoint(const std::string &location, bool temporary,
                           std::string &error);
-    bool handleInterrupt(std::string &error);
     static bool takeKeyboardInterrupt(HANDLE input);
     void closeHandles();
 
@@ -65,6 +69,7 @@ private:
     HANDLE gdbOutput_ = INVALID_HANDLE_VALUE;
     HANDLE debuggeeProcess_ = INVALID_HANDLE_VALUE;
     HANDLE debuggeeThread_ = INVALID_HANDLE_VALUE;
+    HANDLE processJob_ = INVALID_HANDLE_VALUE;
     HANDLE userScreen_ = INVALID_HANDLE_VALUE;
     HANDLE consoleInput_ = INVALID_HANDLE_VALUE;
     std::string inputBuffer_;

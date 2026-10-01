@@ -1,0 +1,133 @@
+#!/usr/bin/make
+# Automatically generated from RHIDE projects, don't edit
+#
+
+OBJFILES=\
+	obj/datafile$(ExOBJ) \
+	obj/install$(ExOBJ) \
+	obj/nostatex$(ExOBJ) \
+	obj/nprogbar$(ExOBJ) \
+	obj/nprogres$(ExOBJ) \
+	obj/tprogbar$(ExOBJ) \
+	obj/tprogdia$(ExOBJ) \
+	obj/tprogres$(ExOBJ) 
+
+LIBRARIES=\
+	libeasyd$(ExLIB) 
+
+../install/install$(ExEXE):: \
+	obj/datafile$(ExOBJ) \
+	libeasyd$(ExLIB) \
+	obj/install$(ExOBJ) \
+	obj/nostatex$(ExOBJ) \
+	obj/nprogbar$(ExOBJ) \
+	obj/nprogres$(ExOBJ) \
+	obj/tprogbar$(ExOBJ) \
+	obj/tprogdia$(ExOBJ) \
+	obj/tprogres$(ExOBJ) \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_LINK)
+
+obj/datafile$(ExOBJ):: datafile.c \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_C)
+
+INCLUDE00=easydiag$(ExIMK)
+
+obj/install$(ExOBJ):: install.cc \
+	ceditint.h \
+	compatlayer.h \
+	configed.h \
+	easydia1.h \
+	easydiag.h \
+	nostatex.h \
+	settvuti.h \
+	snostate.h \
+	tprogdia.h \
+	tsbutton.h \
+	tschkbox.h \
+	tshzgrp.h \
+	tsinplin.h \
+	tslabel.h \
+	tstatext.h \
+	tstextsc.h \
+	tsview.h \
+	tsviewco.h \
+	ttextscr.h \
+	tv.h \
+	tv/app.h \
+	tv/applictn.h \
+	tv/button.h \
+	tv/checkbox.h \
+	tv/cluster.h \
+	tv/cmdset.h \
+	tv/configtv.h \
+	tv/desktop.h \
+	tv/dialog.h \
+	tv/dialogs.h \
+	tv/drawbuf.h \
+	tv/editors.h \
+	tv/event.h \
+	tv/group.h \
+	tv/history.h \
+	tv/inputln.h \
+	tv/intl.h \
+	tv/ipstream.h \
+	tv/label.h \
+	tv/menus.h \
+	tv/msgbox.h \
+	tv/nscoll.h \
+	tv/object.h \
+	tv/objects.h \
+	tv/opstream.h \
+	tv/palette.h \
+	tv/point.h \
+	tv/program.h \
+	tv/pstream.h \
+	tv/rect.h \
+	tv/scrlbar.h \
+	tv/scroller.h \
+	tv/sitem.h \
+	tv/statsdef.h \
+	tv/statsitm.h \
+	tv/statslin.h \
+	tv/stddlg.h \
+	tv/streambl.h \
+	tv/sttctext.h \
+	tv/system.h \
+	tv/tkeys.h \
+	tv/tobjstrm.h \
+	tv/ttypes.h \
+	tv/tvconfig.h \
+	tv/tvobjs.h \
+	tv/tvutil.h \
+	tv/view.h \
+	tv/views.h \
+	tv/window.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/nostatex$(ExOBJ):: ../settvuti/nostatex.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/nprogbar$(ExOBJ):: ../settvuti/names/nprogbar.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/nprogres$(ExOBJ):: ../settvuti/names/nprogres.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/tprogbar$(ExOBJ):: ../settvuti/tprogbar.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/tprogdia$(ExOBJ):: ../settvuti/tprogdia.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/tprogres$(ExOBJ):: ../settvuti/tprogres.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+

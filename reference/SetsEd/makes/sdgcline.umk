@@ -1,0 +1,89 @@
+#!/usr/bin/make
+# Automatically generated from RHIDE projects, don't edit
+#
+
+OBJFILES=\
+	objsdg/bufun2$(ExOBJ) \
+	obj/djmdr$(ExOBJ) \
+	obj/dyncat$(ExOBJ) \
+	obj/memmove$(ExOBJ) \
+	obj/mixer$(ExOBJ) \
+	obj/mixersb$(ExOBJ) \
+	obj/mixoss$(ExOBJ) \
+	obj/stackdbg$(ExOBJ) \
+	obj/strncpyz$(ExOBJ) \
+	obj/strndup$(ExOBJ) \
+	objsdg/mli$(ExOBJ) \
+	objsdg/mliasimp$(ExOBJ) \
+	objsdg/mlicsdg$(ExOBJ) \
+	objsdg/mlisdg$(ExOBJ) \
+	objsdg/ntnocast$(ExOBJ) \
+	objsdg/setstack$(ExOBJ) \
+	objsdg/stnocast$(ExOBJ) \
+	objsdg/tnocastc$(ExOBJ) \
+	objsdg/txhgen$(ExOBJ) \
+	objsdg/txhmain$(ExOBJ) 
+
+LIBRARIES=\
+	librhuti$(ExLIB) 
+
+sdg$(ExEXE):: \
+	objsdg/bufun2$(ExOBJ) \
+	obj/djmdr$(ExOBJ) \
+	obj/dyncat$(ExOBJ) \
+	obj/memmove$(ExOBJ) \
+	obj/mixer$(ExOBJ) \
+	obj/mixersb$(ExOBJ) \
+	obj/mixoss$(ExOBJ) \
+	obj/stackdbg$(ExOBJ) \
+	obj/strncpyz$(ExOBJ) \
+	obj/strndup$(ExOBJ) \
+	librhuti$(ExLIB) \
+	objsdg/mli$(ExOBJ) \
+	objsdg/mliasimp$(ExOBJ) \
+	objsdg/mlicsdg$(ExOBJ) \
+	objsdg/mlisdg$(ExOBJ) \
+	objsdg/ntnocast$(ExOBJ) \
+	objsdg/setstack$(ExOBJ) \
+	objsdg/stnocast$(ExOBJ) \
+	objsdg/tnocastc$(ExOBJ) \
+	objsdg/txhgen$(ExOBJ) \
+	objsdg/txhmain$(ExOBJ) \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_LINK)
+
+objsdg/bufun2$(ExOBJ):: ../sdg/bufun2.cc  
+	$(RHIDE_COMPILE_CC)
+
+INCLUDE00=extra$(ExIMK)
+
+objsdg/mli$(ExOBJ):: ../sdg/mli.cc  
+	$(RHIDE_COMPILE_CC)
+
+objsdg/mliasimp$(ExOBJ):: ../sdg/mliasimp.cc  
+	$(RHIDE_COMPILE_CC)
+
+objsdg/mlicsdg$(ExOBJ):: ../sdg/mlicsdg.cc  
+	$(RHIDE_COMPILE_CC)
+
+objsdg/mlisdg$(ExOBJ):: ../sdg/mlisdg.cc  
+	$(RHIDE_COMPILE_CC)
+
+objsdg/ntnocast$(ExOBJ):: ../settvuti/names/ntnocast.cc  
+	$(RHIDE_COMPILE_CC)
+
+objsdg/setstack$(ExOBJ):: ../settvuti/setstack.cc  
+	$(RHIDE_COMPILE_CC)
+
+objsdg/stnocast$(ExOBJ):: ../settvuti/streams/stnocast.cc  
+	$(RHIDE_COMPILE_CC)
+
+objsdg/tnocastc$(ExOBJ):: ../settvuti/tnocastc.cc  
+	$(RHIDE_COMPILE_CC)
+
+objsdg/txhgen$(ExOBJ):: ../sdg/txhgen.cc  
+	$(RHIDE_COMPILE_CC)
+
+objsdg/txhmain$(ExOBJ):: ../sdg/txhmain.cc  
+	$(RHIDE_COMPILE_CC)
+

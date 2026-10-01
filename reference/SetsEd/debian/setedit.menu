@@ -1,0 +1,5 @@
+?package(setedit):needs="vc" section="Apps/Editors"\
+  title="SET's Editor" command="/usr/bin/setedit"
+?package(setedit):needs="x11" section="Apps/Editors"\
+  title="SET's Editor" command="/usr/bin/setedit"
+

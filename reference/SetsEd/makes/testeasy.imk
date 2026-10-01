@@ -1,0 +1,96 @@
+#!/usr/bin/make
+# Automatically generated from RHIDE projects, don't edit
+#
+
+OBJFILES=\
+	obj/test$(ExOBJ) 
+
+LIBRARIES=\
+	libsettv$(ExLIB) \
+	libeasyd$(ExLIB) 
+
+test$(ExEXE):: \
+	libeasyd$(ExLIB) \
+	libsettv$(ExLIB) \
+	obj/test$(ExOBJ) \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_LINK)
+
+INCLUDE00=easydiag$(ExIMK)
+
+obj/test$(ExOBJ):: ../easydiag/test.cc \
+	compatlayer.h \
+	easydia1.h \
+	easydiag.h \
+	nostatex.h \
+	settvuti.h \
+	snostate.h \
+	tinppipe.h \
+	tsbutton.h \
+	tschkbox.h \
+	tshzgrp.h \
+	tsinplin.h \
+	tsinplpi.h \
+	tslabel.h \
+	tslider.h \
+	tslistbo.h \
+	tsradbot.h \
+	tssortlb.h \
+	tssortva.h \
+	tstatext.h \
+	tstextsc.h \
+	tsvegrp.h \
+	tsview.h \
+	tsviewco.h \
+	ttextscr.h \
+	tv.h \
+	tv/app.h \
+	tv/applictn.h \
+	tv/button.h \
+	tv/checkbox.h \
+	tv/cluster.h \
+	tv/configtv.h \
+	tv/desktop.h \
+	tv/dialog.h \
+	tv/dialogs.h \
+	tv/drawbuf.h \
+	tv/event.h \
+	tv/group.h \
+	tv/history.h \
+	tv/inputln.h \
+	tv/intl.h \
+	tv/ipstream.h \
+	tv/label.h \
+	tv/listbox.h \
+	tv/lstviewr.h \
+	tv/no_mss.h \
+	tv/nscoll.h \
+	tv/object.h \
+	tv/objects.h \
+	tv/opstream.h \
+	tv/palette.h \
+	tv/point.h \
+	tv/program.h \
+	tv/pstream.h \
+	tv/radiobtn.h \
+	tv/rect.h \
+	tv/scrlbar.h \
+	tv/scroller.h \
+	tv/sitem.h \
+	tv/sortlibo.h \
+	tv/stddlg.h \
+	tv/streambl.h \
+	tv/sttctext.h \
+	tv/system.h \
+	tv/tobjstrm.h \
+	tv/ttypes.h \
+	tv/tvconfig.h \
+	tv/tvobjs.h \
+	tv/tvutil.h \
+	tv/view.h \
+	tv/views.h \
+	tv/window.h \
+	tv/yes_mss.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+

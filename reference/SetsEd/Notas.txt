@@ -1,0 +1,140 @@
+ESTOY CON  ESTO:
+
+Hay algún problema de pintado cuando se hace un S&R en varios archivos.
+Documentar los nuevos comandos.
+
+AnalizeLineForIndent
+
+Gets:
+s:firstUsedPos: pointer to the first "no space" char in previous line.
+x:firstUsedCol: column for the char.
+mu:makeUnIndent: returns True if we have to "unindent".
+l:larAnt-CLY_LenEOL: length for the previous line without the EOL.
+tabSize: the size for a tab char.
+avail:firstUsedPos-buffer: how many chars can we go backwards.
+
+Returns:
+The target column and the makeUnindent flag.
+
+1) If s points to an EOL comment return x.
+
+   // xxxxx
+   _
+
+2) If s points to a simple comment skip it, if the comment doesn't end in
+this line return x.
+
+   /* xxxxx
+   _
+
+After finding the end of the comment eat all the spaces after it. If it
+consumed the whole line then return x.
+
+  /* xxxxxx */
+  _
+
+3) If we just found / then return x.
+
+  /.....
+  _
+
+It looks silly, I think the rest of the code should handle it.
+
+4) The code extracts the first word in the line (startWord,lenWord) located
+at the current column (passed or after skipping the comment: xStartWord)
+
+5) If no word and we found { return x+1
+
+   {
+    _
+
+6) If no word and we found } and X!=0 ask for unindent.
+
+   }
+   <-
+
+7) Eat all the spaces after the word (Xlocal is the column for the first non
+blank after the first word now).
+
+8) Search:
+   a) the column for the first non-blank after a ( (+1) xFirstPar
+   b) if the parenthesis are balanced
+   c) the last used char (non-blank) in the line
+   Note: while searching skip "...", '...' and /* ... */
+         if we find // ... abort
+
+9) If we have more ( return xFirstPar
+
+   ( ...
+     _
+
+10) If we have more ) then try to find the ( that balances it.
+    If we couldn't find it just unindent.
+    Otherwise:
+    Look for the beggining of that line counting (/)
+    If the line doesn't balance its (/) then just return x
+    Look for the first word in the line.
+    If none return x
+    Use this word instead of the one we had.
+
+11) If until here we couldn't find a word just return x
+
+12) Work with the word: (note: notHaveColon means the last useful char isn't
+;)
+    a) (notHaveColon && (do || if)) return xStartWord+2
+    b) (notHaveColon && for) return xStartWord+3
+    c) else return xStartWord+2
+       case return xStartWord+5
+    d) (notHaveColon && while) return xStartWord+2
+       break return unindent
+    e) return return unindent
+       switch return xStartWord+2
+    f) default return xStartWord+5
+
+13) Just return x
+
+
+
+-------------------------------------------------------
+1) Extraer la primer palabra, para eso hacer un skip de:
+   a) Espacios
+   b) Comentarios
+   Si no hay "palabra" tomar el primer símbolo
+2) Ver cual es la columna del primer caracter non-blank que este luego de la
+palabra.
+3) Ver cual es el balance de (/). En eso memorizar la posición del primer
+"non-blank" que está después del primer paréntesis.
+4) Ver cual es el último caracter non-blank de la línea.
+5) Si el balance es > ):
+   a) Buscar el ( que lo complementa
+   b) Sobre el trozo de línea que termina en ese (:
+      a) Si no tiene un desbalance tomar la primer palabra.
+         Ahora se asume todo balanceado y que la palabra es esta.
+
+ParBalance:
+ 0 => balanceados
+>0 => más abiertos que cerrados
+<0 => más cerrados que abiertos
+FirstWord:
+ La primera palabra o símbolo que encontró en la línea. La anterior o la que
+balanceaba los par.
+LastChar:
+ Último non-blank de la línea
+MoveX: posición del primer non-blank o símbolo
+
+if ParBalancePos then MoveAfterPar
+if ParBalanceNeg then MoveX+0
+if FirstWord=={ then MoveX+1
+if FirstWord==} then Unindent
+if FirstWord==if && LastChar!=; then MoveX+2
+if FirstWord==do && LastChar!=; then MoveX+2
+if FirstWord==for && LastChar!=; then MoveX+3
+if FirstWord==else then MoveX+2
+if FirstWord==case then MoveX+5
+if FirstWord==while && LastChar!=; then MoveX+2
+if FirstWord==break then Unindent
+if FirstWord==return then Unindent
+if FirstWord==switch then MoveX+2
+if FirstWord==default then MoveX+5
+MoveX
+

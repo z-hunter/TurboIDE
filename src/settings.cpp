@@ -9,11 +9,14 @@
 
 namespace {
 std::filesystem::path fileName() {
-    wchar_t buffer[MAX_PATH]{};
-    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", buffer, MAX_PATH);
-    const auto root = length && length < MAX_PATH ? std::filesystem::path(buffer) :
-        std::filesystem::current_path();
-    return root / L"TurboIDE" / L"settings.ini";
+    static const auto path = [] {
+        wchar_t buffer[MAX_PATH]{};
+        const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", buffer, MAX_PATH);
+        const auto root = length && length < MAX_PATH ? std::filesystem::path(buffer) :
+            std::filesystem::current_path();
+        return root / L"TurboIDE" / L"settings.ini";
+    }();
+    return path;
 }
 
 std::string toUtf8(const std::filesystem::path &path) {
@@ -31,6 +34,8 @@ void loadSettings(IDESettings &settings) {
             catch (...) {}
         } else if (line.rfind("default_extension=", 0) == 0) {
             settings.defaultExtension = line.substr(18);
+        } else if (line.rfind("current_directory=", 0) == 0) {
+            settings.currentDirectory = std::filesystem::u8path(line.substr(18));
         } else if (line.rfind("last_project=", 0) == 0) {
             settings.lastProject = std::filesystem::u8path(line.substr(13));
         }
@@ -46,6 +51,8 @@ void saveSettings(const IDESettings &settings) {
         return;
     output << "tab_size=" << std::clamp(settings.tabSize, 1, 32) << "\n";
     output << "default_extension=" << settings.defaultExtension << "\n";
+    if (!settings.currentDirectory.empty())
+        output << "current_directory=" << toUtf8(settings.currentDirectory) << "\n";
     if (!settings.lastProject.empty())
         output << "last_project=" << toUtf8(settings.lastProject) << "\n";
 }

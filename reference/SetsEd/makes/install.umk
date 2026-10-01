@@ -1,0 +1,56 @@
+#!/usr/bin/make
+# Automatically generated from RHIDE projects, don't edit
+#
+
+OBJFILES=\
+	obj/datafile$(ExOBJ) \
+	obj/install$(ExOBJ) \
+	obj/nostatex$(ExOBJ) \
+	obj/nprogbar$(ExOBJ) \
+	obj/nprogres$(ExOBJ) \
+	obj/tprogbar$(ExOBJ) \
+	obj/tprogdia$(ExOBJ) \
+	obj/tprogres$(ExOBJ) 
+
+LIBRARIES=\
+	libeasyd$(ExLIB) 
+
+../install/install$(ExEXE):: \
+	obj/datafile$(ExOBJ) \
+	libeasyd$(ExLIB) \
+	obj/install$(ExOBJ) \
+	obj/nostatex$(ExOBJ) \
+	obj/nprogbar$(ExOBJ) \
+	obj/nprogres$(ExOBJ) \
+	obj/tprogbar$(ExOBJ) \
+	obj/tprogdia$(ExOBJ) \
+	obj/tprogres$(ExOBJ) \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_LINK)
+
+obj/datafile$(ExOBJ):: datafile.c  
+	$(RHIDE_COMPILE_C)
+
+INCLUDE00=easydiag$(ExIMK)
+
+obj/install$(ExOBJ):: install.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/nostatex$(ExOBJ):: ../settvuti/nostatex.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/nprogbar$(ExOBJ):: ../settvuti/names/nprogbar.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/nprogres$(ExOBJ):: ../settvuti/names/nprogres.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tprogbar$(ExOBJ):: ../settvuti/tprogbar.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tprogdia$(ExOBJ):: ../settvuti/tprogdia.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/tprogres$(ExOBJ):: ../settvuti/tprogres.cc  
+	$(RHIDE_COMPILE_CC)
+

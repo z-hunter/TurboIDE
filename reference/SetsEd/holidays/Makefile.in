@@ -1,0 +1,26 @@
+CC=@CC@
+CFLAGS=@CFLAGS@
+dyndir=@dyndir@
+dynversion=.1.0.0
+
+LIBS=argentina deutschland datetools defholidays
+
+all: $(addsuffix .so,$(LIBS))
+
+libs: $(addsuffix .so,$(LIBS))
+
+%.o: %.c
+	$(CC) -c -fPIC $(CFLAGS) $<
+
+%.so: %.o
+	$(CC) -o $@ $< -shared -Wl,-soname,$(basename $@).so$(dynversion)
+
+%.ins: %.so
+	install -d $(dyndir)
+	-install $< $(dyndir)/$@
+
+install: libs $(addsuffix .ins,$(LIBS))
+
+clean:
+	rm -f *.o *.so
+

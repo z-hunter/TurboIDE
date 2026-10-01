@@ -1,0 +1,58 @@
+Source: setedit
+Section: editors
+Priority: optional
+Maintainer: Ivan Baldo <ibaldo@adinet.com.uy>
+Build-Depends: perl | perl5, rhtvision2.2.1-dev, debhelper (>=2.0.54), libpcre3-dev | libpcre2-dev, libz-dev, libbz2-dev, texinfo, gettext, libaa1-dev | aalib1-dev
+Standards-Version: 3.7.2.2
+
+Package: setedit
+Section: editors
+Architecture: any
+Depends: ${shlibs:Depends}, debconf
+Recommends: man
+Suggests: doc-base, texinfo, exuberant-ctags | ctags
+Conflicts: suidmanager (<< 0.50)
+XB-Bugs: mailto:ibaldo@adinet.com.uy
+Description: SET's Editor - An editor for programmers
+ SET's Editor is a friendly text editor; it was designed to be used
+ by programmers; the main target of the editor is C and C++ code but
+ it can be used for other tasks and supports syntax highlight for
+ more than 47 languages. It has a user interface very easy to
+ understand for people that used non-UNIX programs (real windows,
+ dialogs, buttons, pull-down menues, mouse, etc.).
+ .
+ Note from Debian packager: if you aren't a programmer take a look
+ at this editor anyway, it is really user friendly, easy to use yet
+ powerful. Also, it has syntax highlight for a lot of files, macros,
+ pseudo macros, and a lot more features.
+ .
+ THIS IS NOT A DEBIAN OFFICIAL PACKAGE AND IS NOT PART OF THE OFFICIAL
+ DEBIAN DISTRIBUTION.
+
+Package: infview
+Section: doc
+Architecture: any
+Depends: ${shlibs:Depends}
+Recommends: man
+Suggests: doc-base
+Conflicts: suidmanager (<< 0.50)
+XB-Bugs: mailto:ibaldo@adinet.com.uy
+Description: SET's InfoViewer - An info documentation browser
+ SET's InfoViewer is a friendly text-console-mode GNU Info documentation
+ browser. This is the SET's Editor info browser but standalone.
+ .
+ THIS IS NOT A DEBIAN OFFICIAL PACKAGE AND IS NOT PART OF THE OFFICIAL
+ DEBIAN DISTRIBUTION.
+ 
+Package: libset-dev
+Section: libdevel
+Architecture: any
+XB-Bugs: mailto:ibaldo@adinet.com.uy
+Description: SET's libset - An editor library
+ SET's libset is a library providing the SET's Editor functionality, it is
+ used to build RHIDE but maybe in the future can be used by other projects.
+ At the moment, only static version is shipped, because upstream doesn't care
+ about sonames and versions as to be able to ship a shared version.
+ .
+ THIS IS NOT A DEBIAN OFFICIAL PACKAGE AND IS NOT PART OF THE OFFICIAL
+ DEBIAN DISTRIBUTION.

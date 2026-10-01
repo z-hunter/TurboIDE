@@ -1,0 +1,83 @@
+SET's Editor for DEBIAN
+-----------------------
+    To run the editor just execute the binary "setedit".
+    When first run, it will present you with the readme file and some tips.
+Thats a good time to start to configure it.
+    When you upgrade to a new version, the configuration is automatically
+converted to the new configuration format. The bad thing about that is that
+you will loose the configuration of the editor if you install an older
+version... but I think this is not a problem.
+    More documentation is in info format, called setedit.info. You can view
+this documentation from inside the editor (just press F1), using the
+standalone GNU info viewer (executing "info setedit") or using the standalone
+SET's InfoViewer if you instaled it executing "infview setedit".
+    Email me if you have suggestions/comments or bugs against the
+debianization of this package. If the bug is in the original package (and not
+related to Debian) please email the upstream author (for email look in the
+copyright file located in this same directory), anyway you can email me and
+I will forward the bug to the upstream maintainer (if you have problems
+contacting the upstream author, contact me and I will contact him).
+	Remember: THIS IS AN UNOFFICIAL DEBIAN PACKAGE AND IS NOT PART OF THE
+DEBIAN DISTRIBUTION. Please, do NOT send bug reports to the DEBIAN BUG
+TRACKING SYSTEM!!!
+
+
+APT repository
+--------------
+    There is an APT repository on http://setedit.sourceforge.net/debian/,
+ofcourse you can manually download packages for installing with dpkg if you
+are not using APT.
+    If using APT, add the following line to your /etc/apt/sources.list:
+    deb http://setedit.sourceforge.net/debian woody main
+    You can substitute woody with the name of your distribution, for example
+potato, sarge or sid. The use of aliases like stable, testing or unstable is
+discouraged.
+
+
+Debian specific FAQ
+-------------------
+Q.: Why is the editor and the info viewer suid root?
+A.: Because by default in Debian the /dev/vcsa or /dev/vcc/a* device nodes are
+accessible by root only. If RHTVision based programs (SETEdit and INFView use
+the RHTVision library for their user interfase) have access to this device
+files, they run faster and better. This programs are designed to be used this
+way and they drop root privileges as soon as possible, so it shouldn't be a
+security risk.
+
+Q.: Why is INFView Debian version numbering scheme so ugly?
+A.: Well, I will try to explain: currently the versioning scheme is like this:
+infview_0.2.7-0.4.51-1_i386.deb, that means that the package is called
+"infview", that the version number of INFView is 0.2.7, that the version
+number of the editor that contains it is 0.4.51, that the Debian revision is 1
+and that it is compiled for the i386 architecture. The source package from
+where the INFView package is generated is SETEdit, so everytime I generate the
+SETEdit package, I generate also the INFView package. So given the following
+example:
+version:	SETEdit	INFView
+			0.4.50	0.2.7
+			0.4.51	0.2.7
+Notice that the Debian revision for the packages generated is -1 since it
+starts from 1 wherever the SETEdit package changes its version number and that
+the packages generated are these: setedit_0.4.50-1_i386.deb,
+setedit_0.4.51-1_i386.deb and in both cases infview_0.2.7-1_i386.deb.
+Now suppose that I have fixed a grave packaging bug in the 0.4.51 version of
+SETEdit with Debian revision 1, for dpkg, APT, DSelect and other tools, the
+INFView package didn't change, so your system will not be updated and also you
+won't notice that indeed there is a new version of INFView! There could be
+other problems as well like library incompatibilities and your sistem won't
+upgrade since it wouldn't realize that the version of INFView is different.
+
+Q.: Why the editor and the info viewer aren't available on the official Debian
+distribution?
+A.: Because the RHTVision package they depend on can't be at the moment
+on the Debian distribution. See RHTVision's package documentation to know why.
+
+
+Things to do for the package
+----------------------------
+- should use newer features of Debhelpers.
+- should upgrade to po-debconf.
+- should register more documents with doc-base (faq, tags tutorial, etc.).
+
+Ivan Baldo <ibaldo@adinet.com.uy>, Sun, 10 Aug 2003 20:47:31 -0300
+

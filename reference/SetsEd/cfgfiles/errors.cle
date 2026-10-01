@@ -1,0 +1,165 @@
+# Copyright (C) 1999-2005 by Salvador E. Tropea (SET),
+# see copyrigh file for details
+#
+# Command line errors description file for SET's editor
+#
+# Name must be the first.
+#
+
+#
+# GNU programs
+# Note: The `Internal' version is faster and also supports
+# internationalization.
+#       The internal version also supports long lines cut
+# by gcc 3.x.
+#
+Name=GNU
+Pattern=((\w:[^:]+)|([^:]+)):(\d+): (.+)
+File=1
+Line=4
+Description=5
+EnterDirPat=[Ee]ntering dir(.+)`(.+)'
+EnterDirDir=2
+LeaveDir=[Ll]eaving dir
+UseInternal
+End
+
+#
+# Clipper 5.x
+#
+Name=Clipper
+Pattern=(.+)\((.+)\) +(Error|Warning) (.+)
+File=1
+Line=2
+Severity=3
+Description=4
+SevError=Error
+SevWarn=Warning
+End
+
+#
+# Visual C 5.0
+#
+# Textual description by Grzegorz Adam Hankiewicz <gradha@iname.com>
+# Not tested.
+#
+Name=Visual C
+Pattern=(.+)\((.+)\) :(.+):(.+)
+File=1
+Line=2
+Description=4
+End
+
+#
+# Borland C 5.5
+#
+# Textual description by Grzegorz Adam Hankiewicz <gradha@iname.com>
+# SET: I tested it and fixed some details. I used the free command line tools
+#
+Name=Borland C
+Pattern=(Error|Warning) (.+) (.+) (.+): (.+)
+Severity=1
+# 2 is the number of the error/warning
+File=3
+Line=4
+Description=5
+SevError=Error
+SevWarn=Warning
+End
+
+#
+# Turbo Pascal 7.0
+#
+# Textual description by Grzegorz Adam Hankiewicz <gradha@iname.com>
+# Not tested.
+#
+Name=Turbo Pascal
+Pattern=(.+)\((.+)\):(.+):(.+)
+File=1
+Line=2
+Description=4
+End
+
+#
+# Watcom 11
+#
+# Textual description by Grzegorz Adam Hankiewicz <gradha@iname.com>
+# Not tested.
+#
+Name=Watcom
+Pattern=(.+)\((.+)\) : (.+) : (.+)
+File=1
+Line=2
+Description=4
+End
+
+#
+# Turbo Assembler v 2.02
+#
+# Textual description by Alex Lozano <alex@inti.gov.ar>
+#
+# Messages format:
+# **Warning|Error|Fatal** filename(line) [macroname(macroline)] message
+#
+Name=Tasm 2.02
+Pattern=\*+(Error|Warning|Fatal)\*+\s([^\(]*)\((\d+)\)\s(.*)
+Severity=1
+File=2
+Line=3
+Description=4
+SevError=Error|Fatal
+SevWarn=Warning
+End
+
+#
+# ANT java builder
+# Contributed by Grzegorz Adam Hankiewicz <gradha@efaber.net>
+#
+Name=Ant (Java)
+Pattern=javac\] ([^:]+):(\d+): (.+)
+File=1
+Line=2
+Description=3
+End
+
+#
+# Perl
+# Contributed by Thiago F.G. Albuquerque
+#
+# Messages format:
+# <error> at <filename> line <lineno>
+#
+Name=Perl
+Pattern=at (.+) line (\d+)
+File=1
+Line=2
+End
+
+#
+# Xilinx tools, in particular xst
+#
+# Messages format:
+# <error|warning>:<program>:<error_code> - <filename> line <lineno>: <description>
+#
+Name=Xilinx
+Pattern=(WARNING|ERROR):([^:]+):(\d+) - \"?([^\"]+)\"? [lL]ine (\d+)[:\.] (.+)
+Severity=1
+File=4
+Line=5
+Description=6
+SevError=ERROR
+SevWarn=WARNING
+End
+
+#
+# PHP
+#
+# Messages format:
+# <error> in <filename> on line <lineno>
+#
+Name=PHP
+Pattern=in (.+) on line (\d+)
+File=1
+Line=2
+End
+

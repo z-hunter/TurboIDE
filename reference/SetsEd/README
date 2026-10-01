@@ -1,0 +1,55 @@
+Hi! That's the readme file for the sources.
+
+0.  Urgent! I'm in a hurry ...
+1.  Introduction
+2.  How to compile
+
+-----------------------------------------------------------------------------
+
+0. Urgent! I'm in a hurry ...
+
+  This is a really simple explanation, I strongly suggest reading the
+INSTALL.txt file.
+  If you are running Linux, djgpp, Cygwin or MinGW equiped with most UNIX
+tools (shell utils, file utils, perl, make, etc.) you can try the following:
+
+1) Install, configure, make and make install the Turbo Vision library (last
+version available).
+2) Do the same with the editor, here is how if you don't know:
+
+A) Run the configure script (./configure or configure).
+
+Examples:
+   linux:/usr/src/tvision# ./configure
+   c:\djgpp\contrib\tvision>configure
+
+B) If all is OK run "make".
+C) If all is OK just run "make install".
+
+  With it you'll get the editor compiled and installed.
+  If the installation prefix directory is wrongly guessed call the configure
+script passing --prefix=dir as argument.
+Example:
+  linux:/usr/src/tvision# ./configure --prefix=/usr/local
+
+
+
+1. Introduction:
+
+  For information about copyrights read the copyrigh file, the editor is
+mostly GPL/LGPL. I made it GPL because is the less restrictive license for
+developing, not for people trying to use the editor's sources. Why? if the
+code is GPL I can use GPL sources in my code without problems and I want to
+use good code from others instead of reinventing things.
+  Note: I put a lot of effort to make the compilation smooth but you should
+read all the docs and get all the needed tools.
+
+
+
+2. How to compile:
+
+  The file INSTALL.txt contains some basic instructions and explains which
+file you have to read according with your system.
+
+
+Happy hacking.

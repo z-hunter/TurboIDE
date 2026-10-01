@@ -26,14 +26,21 @@ std::string writeRect(const DesktopRect &rect) {
            std::to_string(rect.right) + ',' + std::to_string(rect.bottom);
 }
 
-bool isInsideProject(const std::filesystem::path &file, const std::filesystem::path &root,
-                     std::filesystem::path &relative) {
+bool relativeTo(const std::filesystem::path &file, const std::filesystem::path &root,
+                std::filesystem::path &relative) {
     std::error_code error;
     relative = std::filesystem::relative(file, root, error);
     if (error || relative.empty()) return false;
     for (const auto &part : relative)
         if (part == L"..") return false;
     return true;
+}
+
+std::filesystem::path storedPath(const std::filesystem::path &file,
+                                const std::filesystem::path &root) {
+    std::filesystem::path relative;
+    return relativeTo(file, root, relative) ? relative :
+        std::filesystem::absolute(file).lexically_normal();
 }
 }
 
@@ -68,6 +75,16 @@ bool loadDesktopSession(const std::filesystem::path &projectFile, DesktopSession
                 continue;
             if (editor.line < 1 || editor.column < 1) continue;
             loaded.editors.push_back(std::move(editor));
+        } else if (line.rfind("breakpoint=", 0) == 0) {
+            const auto separator = line.rfind('\t');
+            if (separator == std::string::npos) continue;
+            try {
+                const int breakpointLine = std::stoi(line.substr(separator + 1));
+                if (breakpointLine > 0)
+                    loaded.breakpoints.emplace_back(root / std::filesystem::u8path(line.substr(11, separator - 11)), breakpointLine);
+            } catch (...) {}
+        } else if (line.rfind("watch=", 0) == 0) {
+            if (line.size() > 6) loaded.watches.push_back(line.substr(6));
         }
     }
     if (input.bad()) return false;
@@ -84,14 +101,20 @@ bool saveDesktopSession(const std::filesystem::path &projectFile, const DesktopS
     if (!output) return false;
     output << "# TurboIDE desktop session v1\n";
     if (session.hasProjectBounds) output << "project=" << writeRect(session.projectBounds) << "\n";
-    std::filesystem::path active;
-    if (isInsideProject(session.activeFile, root, active)) output << "active=" << toUtf8(active) << "\n";
+    if (!session.activeFile.empty())
+        output << "active=" << toUtf8(storedPath(session.activeFile, root)) << "\n";
     for (const auto &editor : session.editors) {
-        std::filesystem::path relative;
-        if (!isInsideProject(editor.file, root, relative)) continue;
-        output << "editor=" << toUtf8(relative) << '\t' << writeRect(editor.bounds) << '\t'
+        output << "editor=" << toUtf8(storedPath(editor.file, root)) << '\t' << writeRect(editor.bounds) << '\t'
                << editor.line << ',' << editor.column << "\n";
     }
+    for (const auto &breakpoint : session.breakpoints) {
+        if (breakpoint.second > 0)
+            output << "breakpoint=" << toUtf8(std::filesystem::absolute(breakpoint.first).lexically_normal())
+                   << '\t' << breakpoint.second << "\n";
+    }
+    for (const auto &watch : session.watches)
+        if (!watch.empty() && watch.find_first_of("\r\n") == std::string::npos)
+            output << "watch=" << watch << "\n";
     output.close();
     if (!output || !MoveFileExW(temporary.c_str(), file.c_str(), MOVEFILE_REPLACE_EXISTING)) {
         DeleteFileW(temporary.c_str());

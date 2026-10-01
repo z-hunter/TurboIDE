@@ -1,0 +1,31 @@
+#!/usr/bin/make
+# Automatically generated from RHIDE projects, don't edit
+#
+
+obj/inf$(ExOBJ):: ../infview/inf.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/infbase$(ExOBJ):: ../infview/infbase.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/manview$(ExOBJ):: ../infview/manview.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/nhiscoll$(ExOBJ):: ../infview/names/nhiscoll.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/ninfview$(ExOBJ):: ../infview/names/ninfview.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/ninfwind$(ExOBJ):: ../infview/names/ninfwind.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/nmanwind$(ExOBJ):: ../infview/names/nmanwind.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/sinf$(ExOBJ):: ../infview/streams/sinf.cc  
+	$(RHIDE_COMPILE_CC)
+
+obj/sman$(ExOBJ):: ../infview/streams/sman.cc  
+	$(RHIDE_COMPILE_CC)
+

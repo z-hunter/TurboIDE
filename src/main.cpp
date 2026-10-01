@@ -103,12 +103,16 @@ constexpr ushort cmDebugToggleBreakpoint = 127;
 constexpr ushort cmDebugStop = 128;
 constexpr ushort cmShowWatches = 129;
 constexpr ushort cmCommandPrompt = 130;
+constexpr ushort cmAddWatch = 131;
+constexpr ushort cmEvaluateWatches = 132;
+constexpr ushort cmShowLocals = 134;
 
 class TurboIDEApp;
 class BuildMessagesWindow;
 class BuildProgressWindow;
 class ProjectFilesWindow;
 class DebugWatchesWindow;
+class DebugWatchWindow;
 
 short nextWindowNumber() {
     bool used[10]{};
@@ -341,6 +345,10 @@ public:
     void deleteProjectItem();
     void updateDebugWatches(DebugWatchesWindow *window);
     void dismissDebugWatches(DebugWatchesWindow *window);
+    void dismissWatch(DebugWatchWindow *window);
+    void addWatch();
+    void evaluateWatches();
+    void deleteWatch(short index);
 
     static TMenuBar *initMenuBar(TRect r);
     static TStatusLine *initStatusLine(TRect r);
@@ -367,6 +375,7 @@ private:
     void stopDebuggee();
     void applyDebugStop(const DebugStop &stop);
     void showDebugWatches();
+    void showDebugLocals();
     std::vector<DebugBreakpoint> allBreakpoints() const;
     TEditWindow *currentEditorWindow() const;
     void restoreEditorAfterRun();
@@ -384,7 +393,7 @@ private:
     void editEnvironment();
     bool activateProject(const std::filesystem::path &file, bool showWindow = true);
     void closeUnusedUntitledEditors();
-    void saveDesktopSession();
+    bool saveDesktopSession();
     void restoreDesktopSession();
     void rememberProject();
     void showAbout();
@@ -415,6 +424,9 @@ private:
     std::unique_ptr<GdbSession> debugger_;
     DebugWatchesWindow *debugWatchesWindow_ = nullptr;
     std::vector<DebugVariable> debugVariables_;
+    std::vector<std::string> watchExpressions_;
+    std::vector<DebugVariable> watchVariables_;
+    DebugWatchWindow *watchWindow_ = nullptr;
     std::unordered_map<std::wstring, std::set<int>> breakpoints_;
     DebugStop currentDebugStop_;
     std::vector<std::wstring> runArguments_;
@@ -806,7 +818,7 @@ public:
     DebugWatchesWindow(const TRect &bounds, TurboIDEApp *app,
                        const std::vector<DebugVariable> *variables, short windowNumber)
         : TWindowInit(&TWindow::initFrame),
-          TWindow(bounds, "Watches / Locals", windowNumber), app_(app) {
+          TWindow(bounds, "Locals", windowNumber), app_(app) {
         list_ = new DebugVariableList(TRect(1, 1, size.x - 1, size.y - 1), variables);
         insert(list_);
     }
@@ -821,6 +833,50 @@ public:
 private:
     TurboIDEApp *app_;
     DebugVariableList *list_;
+};
+
+class DebugWatchList : public TListViewer {
+public:
+    DebugWatchList(const TRect &bounds, const std::vector<DebugVariable> *variables)
+        : TListViewer(bounds, 1, nullptr, nullptr), variables_(variables) {}
+    void getText(char *dest, short item, short maxLen) override {
+        if (item < 0 || static_cast<size_t>(item) >= variables_->size()) {
+            std::snprintf(dest, static_cast<size_t>(maxLen) + 1, "%s", "No watches");
+            return;
+        }
+        const auto &watch = (*variables_)[static_cast<size_t>(item)];
+        const std::string text = watch.name + " = " + watch.value;
+        std::snprintf(dest, static_cast<size_t>(maxLen) + 1, "%s", text.c_str());
+    }
+    void refresh() { setRange(static_cast<short>(std::max<size_t>(1, variables_->size()))); drawView(); }
+private:
+    const std::vector<DebugVariable> *variables_;
+};
+
+class DebugWatchWindow : public TWindow {
+public:
+    DebugWatchWindow(const TRect &bounds, TurboIDEApp *app,
+                     const std::vector<DebugVariable> *variables, short windowNumber)
+        : TWindowInit(&TWindow::initFrame), TWindow(bounds, "Watches", windowNumber), app_(app) {
+        list_ = new DebugWatchList(TRect(1, 1, size.x - 1, size.y - 1), variables);
+        insert(list_);
+    }
+    void refresh() { list_->refresh(); }
+    void handleEvent(TEvent &event) override {
+        if (event.what == evKeyDown && event.keyDown.keyCode == kbDel) {
+            app_->deleteWatch(list_->focused);
+            clearEvent(event);
+            return;
+        }
+        TWindow::handleEvent(event);
+    }
+    void close() override {
+        app_->dismissWatch(this);
+        TWindow::close();
+    }
+private:
+    TurboIDEApp *app_;
+    DebugWatchList *list_;
 };
 
 TurboIDEApp::TurboIDEApp()
@@ -843,6 +899,12 @@ TurboIDEApp::TurboIDEApp()
         userScreenBuffer_ = createUserScreenBuffer(ideScreenBuffer_);
     openEditor(nullptr);
     loadSettings(settings_);
+    std::error_code directoryError;
+    if (!settings_.currentDirectory.empty())
+        std::filesystem::current_path(settings_.currentDirectory, directoryError);
+    if (directoryError)
+        directoryError.clear();
+    settings_.currentDirectory = std::filesystem::current_path(directoryError);
     TEditor::tabSize = settings_.tabSize;
     if (!settings_.lastProject.empty() &&
         _wcsicmp(settings_.lastProject.extension().c_str(), L".prj") == 0 &&
@@ -938,7 +1000,7 @@ TEditWindow *TurboIDEApp::openEditor(const char *fileName, const TRect *savedBou
 void TurboIDEApp::newEditor() {
     std::string extension = settings_.defaultExtension;
     if (extension.empty() || extension[0] != '.') extension.insert(extension.begin(), '.');
-    const auto directory = hasProject_ ? project_.file.parent_path() : std::filesystem::current_path();
+    const auto directory = settings_.currentDirectory;
     auto candidate = directory / (std::string("NONAME") + extension);
     bool primaryIsOpen = false;
     for (TView *view = deskTop->first(); view; view = view->nextView()) {
@@ -986,36 +1048,31 @@ void TurboIDEApp::openFile() {
 }
 
 void TurboIDEApp::newProject() {
-    auto *window = dynamic_cast<TEditWindow *>(deskTop->current);
-    if (!window || !window->editor->fileName[0]) {
-        messageBox("Save a C source file before creating a project.", mfError | mfOKButton);
-        return;
-    }
-
     char projectName[MAXPATH] = "*.prj";
     if (execDialog(new TFileDialog("*.prj", "New project", "~N~ame", fdOKButton, 102), projectName)
         == cmCancel)
         return;
 
     const auto projectFile = std::filesystem::absolute(std::filesystem::u8path(projectName)).lexically_normal();
-    const auto sourceFile = std::filesystem::absolute(std::filesystem::u8path(window->editor->fileName)).lexically_normal();
-    std::error_code pathError;
-    auto source = std::filesystem::relative(sourceFile, projectFile.parent_path(), pathError);
-    if (pathError)
-        source = sourceFile;
+    if (std::filesystem::exists(projectFile)) {
+        if (messageBox("Project already exists. Open it instead?", mfYesNoCancel | mfConfirmation) == cmYes)
+            activateProject(projectFile);
+        return;
+    }
     std::ofstream output(projectFile, std::ios::binary | std::ios::trunc);
     if (!output) {
         messageBox("Cannot create project file.", mfError | mfOKButton);
         return;
     }
-    const auto sourceUtf8 = source.u8string();
-    output << "source=" << sourceUtf8 << "\n";
     output.close();
     if (!output) {
         messageBox("Cannot write project file.", mfError | mfOKButton);
         return;
     }
-    activateProject(projectFile);
+    if (activateProject(projectFile, false)) {
+        showProjectWindow();
+        restoreDesktopSession();
+    }
 }
 
 void TurboIDEApp::openProject() {
@@ -1038,10 +1095,14 @@ bool TurboIDEApp::activateProject(const std::filesystem::path &file, bool showWi
         messageBox(error.c_str(), mfError | mfOKButton);
         return false;
     }
+    if (debugger_) stopDebuggee();
     saveDesktopSession();
     if (projectWindow_) projectWindow_->close();
     project_ = std::move(loaded);
     hasProject_ = true;
+    breakpoints_.clear();
+    watchExpressions_.clear();
+    watchVariables_.clear();
     closeUnusedUntitledEditors();
     settings_.lastProject = project_.file;
     saveSettings(settings_);
@@ -1081,8 +1142,8 @@ void TurboIDEApp::closeUnusedUntitledEditors() {
     }
 }
 
-void TurboIDEApp::saveDesktopSession() {
-    if (!hasProject_ || project_.file.empty()) return;
+bool TurboIDEApp::saveDesktopSession() {
+    if (!hasProject_ || project_.file.empty()) return false;
     DesktopSession session;
     if (projectWindow_) {
         session.hasProjectBounds = true;
@@ -1109,13 +1170,21 @@ void TurboIDEApp::saveDesktopSession() {
         session.editors.push_back(std::move(editor));
         if (window == deskTop->current) session.activeFile = file;
     }
-    ::saveDesktopSession(project_.file, session);
+    for (const auto &entry : breakpoints_)
+        for (int line : entry.second)
+            session.breakpoints.emplace_back(std::filesystem::path(entry.first), line);
+    session.watches = watchExpressions_;
+    return ::saveDesktopSession(project_.file, session);
 }
 
 void TurboIDEApp::restoreDesktopSession() {
     if (!hasProject_) return;
     DesktopSession session;
     if (!loadDesktopSession(project_.file, session)) return;
+    for (const auto &breakpoint : session.breakpoints)
+        breakpoints_[normalizedPathKey(std::filesystem::absolute(breakpoint.first).lexically_normal())]
+            .insert(breakpoint.second);
+    watchExpressions_ = std::move(session.watches);
     const TRect extent = deskTop->getExtent();
     if (projectWindow_ && session.hasProjectBounds) {
         auto bounds = restoreRect(session.projectBounds, extent);
@@ -1159,6 +1228,15 @@ void TurboIDEApp::restoreDesktopSession() {
         active->putInFrontOf(deskTop->first());
         deskTop->setCurrent(active, TGroup::enterSelect);
         active->editor->trackCursor(True);
+    }
+    for (TView *view = deskTop->first(); view; view = view->nextView()) {
+        auto *editor = dynamic_cast<TEditWindow *>(view);
+        if (!editor || !editor->editor->fileName[0]) continue;
+        const auto path = normalizedPathKey(std::filesystem::u8path(editor->editor->fileName));
+        std::vector<int> lines;
+        const auto found = breakpoints_.find(path);
+        if (found != breakpoints_.end()) lines.assign(found->second.begin(), found->second.end());
+        setEditorDebugState(editor->editor, lines, 0);
     }
 }
 
@@ -1216,10 +1294,19 @@ void TurboIDEApp::showWindowList() {
 
 void TurboIDEApp::closeProject() {
     if (!hasProject_) return;
-    saveDesktopSession();
+    if (hasProject_ && !saveDesktopSession())
+        messageBox("Could not save the project desktop file.", mfError | mfOKButton);
+    if (debugger_) stopDebuggee();
     if (projectWindow_) projectWindow_->close();
     project_ = {};
     hasProject_ = false;
+    breakpoints_.clear();
+    watchExpressions_.clear();
+    watchVariables_.clear();
+    debugVariables_.clear();
+    for (TView *view = deskTop->first(); view; view = view->nextView())
+        if (auto *editor = dynamic_cast<TEditWindow *>(view))
+            setEditorDebugState(editor->editor, {}, 0);
     rememberProject();
     saveSettings(settings_);
 }
@@ -1257,10 +1344,6 @@ void TurboIDEApp::deleteProjectItem() {
     if (messageBox("Remove selected file from project?", mfYesNoCancel | mfConfirmation) != cmYes) return;
     Project updated = project_;
     updated.sources.erase(updated.sources.begin() + selected);
-    if (updated.sources.empty()) {
-        messageBox("A project must contain at least one source file.", mfError | mfOKButton);
-        return;
-    }
     std::string error;
     if (!saveProject(updated, error)) { messageBox(error.c_str(), mfError | mfOKButton); return; }
     project_ = std::move(updated);
@@ -1357,6 +1440,10 @@ void TurboIDEApp::buildProject(bool runAfterBuild, bool debugAfterBuild) {
             _wcsicmp(extension.c_str(), L".cxx") == 0)
             request.sources.push_back(item);
     }
+    if (request.sources.empty()) {
+        messageBox("Project has no compilable source files.", mfError | mfOKButton);
+        return;
+    }
     request.includeDirs = project_.includeDirs;
     request.includeDirs.push_back(project_.file.parent_path());
     request.defines = project_.defines;
@@ -1432,13 +1519,23 @@ void TurboIDEApp::editRunDirectory() {
 }
 
 void TurboIDEApp::changeDirectory() {
+    if (hasProject_ && !saveDesktopSession())
+        messageBox("Could not save the project desktop file.", mfError | mfOKButton);
     auto *dialog = new TChDirDialog(cdNormal, 208);
     if (deskTop->size.y > 26)
         dialog->growTo(dialog->size.x, deskTop->size.y - 6);
     if (deskTop->size.x > 60)
         dialog->growTo(std::min<short>(102, deskTop->size.x - (60 - dialog->size.x)),
                        dialog->size.y);
-    execDialog(dialog);
+    if (execDialog(dialog) != cmOK)
+        return;
+    std::error_code error;
+    settings_.currentDirectory = std::filesystem::current_path(error);
+    if (error) {
+        messageBox("Cannot determine the current directory.", mfError | mfOKButton);
+        return;
+    }
+    saveSettings(settings_);
 }
 
 void TurboIDEApp::editEnvironment() {
@@ -1686,6 +1783,8 @@ void TurboIDEApp::toggleBreakpoint() {
             executionLine = currentDebugStop_.line;
         setEditorDebugState(editor->editor, editorBreakpoints, executionLine);
     }
+    if (hasProject_ && !saveDesktopSession())
+        messageBox("Could not save the project desktop file.", mfError | mfOKButton);
 }
 
 void TurboIDEApp::startDebuggee(const std::filesystem::path &executable) {
@@ -1716,6 +1815,21 @@ void TurboIDEApp::startDebuggee(const std::filesystem::path &executable) {
 }
 
 void TurboIDEApp::showDebugWatches() {
+    if (!watchWindow_) {
+        const TRect extent = deskTop->getExtent();
+        const short width = std::max<short>(28, std::min<short>(44, extent.b.x / 2));
+        const short height = std::max<short>(7, std::min<short>(12, extent.b.y / 2));
+        watchWindow_ = new DebugWatchWindow(
+            TRect(extent.b.x - width, 1, extent.b.x, 1 + height), this,
+            &watchVariables_, nextWindowNumber());
+        deskTop->insert(watchWindow_);
+    } else {
+        watchWindow_->refresh();
+        deskTop->setCurrent(watchWindow_, TGroup::enterSelect);
+    }
+}
+
+void TurboIDEApp::showDebugLocals() {
     if (!debugWatchesWindow_) {
         const TRect extent = deskTop->getExtent();
         const short width = std::max<short>(28, std::min<short>(44, extent.b.x / 2));
@@ -1740,27 +1854,104 @@ void TurboIDEApp::dismissDebugWatches(DebugWatchesWindow *window) {
         debugWatchesWindow_ = nullptr;
 }
 
+void TurboIDEApp::dismissWatch(DebugWatchWindow *window) {
+    if (watchWindow_ == window) watchWindow_ = nullptr;
+}
+
+void TurboIDEApp::addWatch() {
+    char expression[256]{};
+    if (execDialog(createSingleInputDialog("Add Watch", "~E~xpression", 250), expression) != cmOK)
+        return;
+    const std::string text(expression);
+    if (text.empty() || text.find_first_of("\r\n") != std::string::npos) return;
+    if (std::find(watchExpressions_.begin(), watchExpressions_.end(), text) != watchExpressions_.end()) {
+        messageBox("That watch already exists.", mfInformation | mfOKButton);
+        return;
+    }
+    watchExpressions_.push_back(text);
+    if (debugger_ && debugger_->active() && !debugger_->running())
+        evaluateWatches();
+    else
+        watchVariables_.push_back({text, "not evaluated", {}});
+    if (watchWindow_) watchWindow_->refresh(); else showDebugWatches();
+    if (hasProject_ && !saveDesktopSession())
+        messageBox("Could not save the project desktop file.", mfError | mfOKButton);
+}
+
+void TurboIDEApp::evaluateWatches() {
+    if (!debugger_ || !debugger_->active() || debugger_->running()) {
+        messageBox("Watches can only be evaluated while debugging is stopped.",
+                   mfInformation | mfOKButton);
+        return;
+    }
+    watchVariables_.clear();
+    for (const auto &expression : watchExpressions_) {
+        DebugVariable watch;
+        watch.name = expression;
+        std::string error;
+        if (!debugger_->evaluate(expression, watch.value, error)) {
+            watch.value = "<error: " + error + ">";
+            const bool safetyModeFailed = error.rfind("Could not restore GDB's write permissions:", 0) == 0;
+            watchVariables_.push_back(std::move(watch));
+            if (safetyModeFailed) {
+                messages_.push_back({error, {}, 0, 0, false});
+                stopDebuggee();
+                if (!watchVariables_.empty())
+                    watchVariables_.back().value = "<error: " + error + ">";
+                if (watchWindow_) watchWindow_->refresh();
+                break;
+            }
+            continue;
+        }
+        watchVariables_.push_back(std::move(watch));
+    }
+    if (watchWindow_) watchWindow_->refresh();
+}
+
+void TurboIDEApp::deleteWatch(short index) {
+    if (index < 0 || static_cast<size_t>(index) >= watchExpressions_.size()) return;
+    watchExpressions_.erase(watchExpressions_.begin() + index);
+    if (static_cast<size_t>(index) < watchVariables_.size())
+        watchVariables_.erase(watchVariables_.begin() + index);
+    if (watchWindow_) watchWindow_->refresh();
+    if (hasProject_ && !saveDesktopSession())
+        messageBox("Could not save the project desktop file.", mfError | mfOKButton);
+}
+
 void TurboIDEApp::applyDebugStop(const DebugStop &stop) {
     currentDebugStop_ = stop;
     if (stop.exited) {
-        const std::string message = "Debuggee exited (" + stop.reason + ").";
+        const std::string message = stop.reason == "exited-signalled" ?
+            "Debuggee terminated by signal " + (stop.signalName.empty() ? "unknown" : stop.signalName) +
+                (stop.signalMeaning.empty() ? "." : " (" + stop.signalMeaning + ").") :
+            stop.hasExitCode && stop.exitCode != 0 ?
+                "Debuggee exited with code " + std::to_string(stop.exitCode) + "." :
+            stop.reason == "exited-normally" ? "Debuggee exited normally (code 0)." :
+            stop.hasExitCode ? "Debuggee exited with code " + std::to_string(stop.exitCode) + "." :
+            "Debuggee stopped: " + stop.reason + ".";
         messages_.push_back({message, {}, 0, 0, false});
         debugger_.reset();
         debugVariables_.clear();
+        for (auto &watch : watchVariables_) watch.value = "<program exited>";
         currentDebugStop_ = {};
         for (TView *view = deskTop->first(); view; view = view->nextView()) {
             if (auto *editor = dynamic_cast<TEditWindow *>(view))
                 setEditorDebugState(editor->editor, {}, 0);
         }
         if (debugWatchesWindow_) debugWatchesWindow_->updateVariables();
+        if (watchWindow_) watchWindow_->refresh();
         if (messagesWindow_) messagesWindow_->updateMessages();
         return;
     }
 
     if (!stop.file.empty() && stop.line > 0) {
-        goToLocation(stop.file, stop.line, 1);
+        if (!goToLocation(stop.file, stop.line, 1))
+            messages_.push_back({"GDB stopped at an unavailable source location: " +
+                                 stop.file.u8string() + ":" + std::to_string(stop.line), {}, 0, 0, false});
         if (auto *window = currentEditorWindow())
             setEditorDiagnostic(window->editor, 0);
+    } else if (stop.reason != "breakpoint-hit" && stop.reason != "end-stepping-range") {
+        messages_.push_back({"GDB stop has no usable source location (" + stop.reason + ").", {}, 0, 0, false});
     }
     for (TView *view = deskTop->first(); view; view = view->nextView()) {
         auto *editor = dynamic_cast<TEditWindow *>(view);
@@ -1781,7 +1972,9 @@ void TurboIDEApp::applyDebugStop(const DebugStop &stop) {
     if (!error.empty())
         messages_.push_back({"GDB locals: " + error, {}, 0, 0, false});
     if (debugWatchesWindow_) debugWatchesWindow_->updateVariables();
-    else showDebugWatches();
+    else showDebugLocals();
+    evaluateWatches();
+    if (!watchExpressions_.empty() && !watchWindow_) showDebugWatches();
     const std::string location = stop.file.empty() ? std::string{} :
         " at " + stop.file.filename().u8string() + ":" + std::to_string(stop.line);
     messages_.push_back({"Stopped: " + stop.reason + location, {}, 0, 0, false});
@@ -1802,6 +1995,7 @@ void TurboIDEApp::continueDebuggee(const char *command) {
         ok = debugger_->stepOver(stop, error);
     SetConsoleActiveScreenBuffer(ideScreenBuffer_);
     if (!ok) {
+        stopDebuggee();
         messageBox(error.c_str(), mfError | mfOKButton);
         return;
     }
@@ -1816,10 +2010,12 @@ void TurboIDEApp::stopDebuggee() {
     debugger_.reset();
     currentDebugStop_ = {};
     debugVariables_.clear();
+    for (auto &watch : watchVariables_) watch.value = "<not evaluated>";
     for (TView *view = deskTop->first(); view; view = view->nextView())
         if (auto *editor = dynamic_cast<TEditWindow *>(view))
             setEditorDebugState(editor->editor, {}, 0);
     if (debugWatchesWindow_) debugWatchesWindow_->updateVariables();
+    if (watchWindow_) watchWindow_->refresh();
     messages_.push_back({error.empty() ? "Debugging stopped." : "Debugging stopped: " + error,
                          {}, 0, 0, false});
     if (messagesWindow_) messagesWindow_->updateMessages();
@@ -2104,6 +2300,15 @@ void TurboIDEApp::handleEvent(TEvent &event) {
     case cmShowWatches:
         showDebugWatches();
         break;
+    case cmShowLocals:
+        showDebugLocals();
+        break;
+    case cmAddWatch:
+        addWatch();
+        break;
+    case cmEvaluateWatches:
+        evaluateWatches();
+        break;
     case cmUserScreen:
         showLastUserScreen();
         break;
@@ -2184,7 +2389,10 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
             *new TMenuItem("Step ~o~ver", cmDebugStepOver, kbF8, hcNoContext, "F8") +
             *new TMenuItem("Toggle ~b~reakpoint", cmDebugToggleBreakpoint, kbCtrlF8, hcNoContext, "Ctrl-F8") +
             *new TMenuItem("~S~top debugging", cmDebugStop, kbCtrlF2, hcNoContext, "Ctrl-F2") +
-            *new TMenuItem("~W~atches / Locals", cmShowWatches, kbNoKey) +
+            *new TMenuItem("Show ~l~ocals", cmShowLocals, kbNoKey) +
+            *new TMenuItem("Show ~w~atches", cmShowWatches, kbNoKey) +
+            *new TMenuItem("~A~dd watch...", cmAddWatch, kbCtrlF7, hcNoContext, "Ctrl-F7") +
+            *new TMenuItem("~E~valuate watches", cmEvaluateWatches, kbCtrlF4, hcNoContext, "Ctrl-F4") +
         *new TSubMenu("~P~roject", kbAltP) +
             *new TMenuItem("New project...", cmNewProject, kbNoKey) +
             *new TMenuItem("~O~pen project...", cmOpenProject, kbNoKey) +

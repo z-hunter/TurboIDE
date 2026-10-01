@@ -1,0 +1,148 @@
+#!/usr/bin/make
+# Automatically generated from RHIDE projects, don't edit
+#
+
+../../makes/libmpegsnd$(ExLIB):: \
+	obj/bitwindow$(ExOBJ) \
+	obj/fileinput$(ExOBJ) \
+	obj/fileplayer$(ExOBJ) \
+	obj/filter$(ExOBJ) \
+	obj/filter_2$(ExOBJ) \
+	obj/httpinput$(ExOBJ) \
+	obj/huffmantable$(ExOBJ) \
+	obj/mpegtable$(ExOBJ) \
+	obj/mpegtoraw$(ExOBJ) \
+	obj/mpegwtoraw$(ExOBJ) \
+	obj/mpglayr1$(ExOBJ) \
+	obj/mpglayr2$(ExOBJ) \
+	obj/mpglayr3$(ExOBJ) \
+	obj/osdisk$(ExOBJ) \
+	obj/rawplayer$(ExOBJ) \
+	obj/rawtofile$(ExOBJ) \
+	obj/rawtowav$(ExOBJ) \
+	obj/soundinputstream$(ExOBJ) \
+	obj/soundplayer$(ExOBJ) \
+	obj/wavetoraw$(ExOBJ) \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_ARCHIVE)
+
+obj/bitwindow$(ExOBJ):: bitwindow.cc \
+	$(MP3_MAIN_DIR)/configed.h \
+	mpegsound.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/fileinput$(ExOBJ):: fileinput.cc \
+	$(MP3_MAIN_DIR)/configed.h \
+	mpegsound.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/fileplayer$(ExOBJ):: fileplayer.cc \
+	$(MP3_MAIN_DIR)/configed.h \
+	mpegsound.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/filter$(ExOBJ):: filter.cc \
+	$(MP3_MAIN_DIR)/configed.h \
+	mpegsound.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/filter_2$(ExOBJ):: filter_2.cc \
+	$(MP3_MAIN_DIR)/configed.h \
+	mpegsound.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/httpinput$(ExOBJ):: httpinput.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/huffmantable$(ExOBJ):: huffmantable.cc \
+	$(MP3_MAIN_DIR)/configed.h \
+	mpegsound.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/mpegtable$(ExOBJ):: mpegtable.cc \
+	$(MP3_MAIN_DIR)/configed.h \
+	mpegsound.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/mpegtoraw$(ExOBJ):: mpegtoraw.cc \
+	$(MP3_MAIN_DIR)/configed.h \
+	mpegsound.h \
+	mpg_locals.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/mpegwtoraw$(ExOBJ):: mpegwtoraw.cc \
+	$(MP3_MAIN_DIR)/configed.h \
+	mpegsound.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/mpglayr1$(ExOBJ):: mpglayr1.cc \
+	$(MP3_MAIN_DIR)/configed.h \
+	mpegsound.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/mpglayr2$(ExOBJ):: mpglayr2.cc \
+	$(MP3_MAIN_DIR)/configed.h \
+	mpegsound.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/mpglayr3$(ExOBJ):: mpglayr3.cc \
+	$(MP3_MAIN_DIR)/configed.h \
+	mpegsound.h \
+	mpg_locals.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/osdisk$(ExOBJ):: osdisk.cc \
+	$(MP3_MAIN_DIR)/configed.h \
+	mpegsound.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/rawplayer$(ExOBJ):: rawplayer.cc \
+	$(MP3_MAIN_DIR)/configed.h \
+	mpegsound.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/rawtofile$(ExOBJ):: rawtofile.cc \
+	$(MP3_MAIN_DIR)/configed.h \
+	mpegsound.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/rawtowav$(ExOBJ):: rawtowav.cc \
+	$(MP3_MAIN_DIR)/configed.h \
+	mpegsound.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/soundinputstream$(ExOBJ):: soundinputstream.cc \
+	$(MP3_MAIN_DIR)/configed.h \
+	mpegsound.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/soundplayer$(ExOBJ):: soundplayer.cc \
+	$(MP3_MAIN_DIR)/configed.h \
+	mpegsound.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/wavetoraw$(ExOBJ):: wavetoraw.cc \
+	$(MP3_MAIN_DIR)/configed.h \
+	mpegsound.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+

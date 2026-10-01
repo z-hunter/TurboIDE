@@ -1,0 +1,39 @@
+That's a list of things to do in the project:
+
+ gpg --batch --passphrase-fd 0  -d arena.dtd.asc
+
+ set pgp_decrypt_command="gpg --passphrase-fd 0 --no-verbose --batch --output - %f"
+ set pgp_encrypt_only_command="pgpewrap gpg --batch --quiet --no-verbose --output - --encrypt --textmode --armor --always-trust --encrypt-to 0xC9C40C31 -- -r %r -- %f"
+ Mejorar la detección de errores, en particular de escritura cuando !ok
+
+* Una manera de especificar que un menú lo que hace es cambiar una rama del menú por otra.
+  De esa manera en el menú de Debug podría haber una entrada "Debug mode: Valgrind" y
+  cuando se elije el menú cambia por otro que tiene la opción "Debug mode: GDB".
+  Esto podría controlarse como un parámetro más de SubMenu: que permita variantes y algún
+  comando especial tipo cm[variante].
+  Luego el menú del valgrind podría reusar la mayor parte de los comandos y demás del
+  del GDB.
+  Otro tema a resolver es a donde tira la info que recoge del wrapper.
+
+* Navigate projects changing the working directory. It should use a stack of
+current directories. Each time a subproject is opened the directory is changed
+and the old pushed to the stack. When the project is closed a pop should
+provide the previous dir and project. If the user breaks the chain by manually
+opening another project the stack should by flushed.
+  It will mostly help Windows users that likes to start an application from a
+central icon and then choose the working dir.
+
+* Add the TV templated suggested by JASC to simplify the code.
+
+* Fix problems with the code pages in Windows versions. Reference report:
+0001.txt.
+* Check what can be removed from:
+ SaveFontLoadedInfo(s);
+ SavePaletteSystem(s);
+ s << TScreen::screenMode;
+ s << UseExternPrgForMode;
+ s.writeString(ExternalPrgMode);
+* Remove: TSetEditorApp::ExternalPrgMode, UseExternPrgForMode
+* Clean code page and font code.
+* Clean all preferences dialogs.
+* Evaluate if the TTextPalette member should test Changed before calling the low level set.

@@ -1,0 +1,615 @@
+setedit (0.5.7-2) unstable; urgency=low
+
+  * Fixed: TV version dependency.
+
+ -- Salvador E. Tropea <set@ieee.org>  Wed, 14 Jul 2010 10:33:17 -0300
+
+setedit (0.5.7-1) unstable; urgency=low
+
+  * Added: control pipe (-C)
+
+ -- Salvador E. Tropea <set@ieee.org>  Mon, 05 Jul 2010 15:52:43 -0300
+
+setedit (0.5.6-1) unstable; urgency=low
+
+  * Added: gdb start and connection files to insert gdb commands.
+
+ -- Salvador E. Tropea <set@ieee.org>  Fri, 25 Sep 2009 12:00:41 -0300
+
+setedit (0.5.5-8) unstable; urgency=low
+
+  * Modified to compile on Lenny (now stable)
+
+ -- Salvador E. Tropea <set@ieee.org>  Thu, 26 Feb 2009 16:20:28 -0200
+
+setedit (0.5.5-7) unstable; urgency=low
+
+  * Undo changes made by Salvador which where the removal of the suggests of
+    doc-base and addition of suggests of gqview, glibc-doc, xpdf and grep. If
+    the editor can use xpdf, gqview and grep please tell me and I will add
+    them again.
+
+ -- Ivan Baldo <ibaldo@adinet.com.uy>  Wed, 27 Aug 2008 21:47:59 -0300
+
+setedit (0.5.5-6) unstable; urgency=low
+
+  * Added XBS-Bugs: mailto:ibaldo@adinet.com.uy fields to the control file
+    so that reportbug sends bug reports to me instead of the Debian Bug
+    Tracking System.
+  * Bumped Standards-Version to 3.7.2.2, no changes.
+  * Don't allow to build with rhtvision 2.0.4 anymore, I don't know if it works
+    and is not recommended anyway.
+
+ -- Ivan Baldo <ibaldo@adinet.com.uy>  Tue, 08 May 2007 17:18:45 -0300
+
+setedit (0.5.5-5etch) unstable; urgency=low
+
+  * Added: Copy and Save for the debug dialog contents (gdb dialog).
+
+ -- Salvador E. Tropea <salvador@inti.gov.ar>  Mon, 23 Apr 2007 11:57:50 -0300
+
+setedit (0.5.5-4etch) unstable; urgency=low
+
+  * Modified to compile with etch. 
+
+ -- Salvador E. Tropea <salvador@inti.gov.ar>  Wed, 18 Apr 2007 17:04:18 -0300
+
+setedit (0.5.5-3) unstable; urgency=low
+
+  * Build-depend either on aalib1-dev or libaa1-dev.
+
+ -- Baurzhan Ismagulov <ibr@radix50.net>  Sat, 10 Mar 2007 23:19:51 +0100
+
+setedit (0.5.5-2) unstable; urgency=low
+
+  * CVS 20061116 r1236 pre-release.
+
+ -- Salvador E. Tropea <salvador@inti.gov.ar>  Thu, 16 Nov 2006 14:17:03 -0300
+
+setedit (0.5.5-1) unstable; urgency=low
+
+  * The "I got ADSL 256kbits for 30 hours per month!" release; you may laugh
+    at that but I live in the 3rd world, previously I was using a 56Kbits
+    telephone modem.
+  * Salvador didn't told in this changelog but we are build-depending on
+    RHTVision 2.0.4 now, but I changed it to that version or 2.1.0 since it
+    seems that it works with both of them.
+  * Don't build-depend on xlibs-dev|xlib6g-dev and libncurses-dev, since
+    rhtvision-dev depends on them and they are really rhtvision's dependencies
+    and not of setedit proper.
+  * Standards compliance with Policy version 3.6.2.0.
+
+ -- Ivan Baldo <ibaldo@adinet.com.uy>  Sat, 20 Aug 2005 18:53:21 -0300
+
+setedit (0.5.5-0.1) unstable; urgency=low
+
+  * New version automatically modified by version update scripts
+
+ -- Salvador E. Tropea (SET) <salvador@inti.gov.ar>  Wed,  1 Dec 2004 14:22:21 -0300
+
+setedit (0.5.4-3) unstable; urgency=low
+
+  * Salvador says this is it!, this is the version that will be officially
+    released! CVS release 1.637 2004/11/02 20:19:01.
+    Greetings to all my fans!!! (do I have one?) Anyway, I dedicate this
+    release to Enyunari!!!
+  * I have installed libmigdb so this editor comes with debugging support
+    built-in.
+
+ -- Ivan Baldo <ibaldo@adinet.com.uy>  Sun, 21 Nov 2004 18:02:18 -0200
+
+setedit (0.5.4-2) unstable; urgency=low
+
+  * A new version of Lintian detected that we are build depending on essential
+    packages so I have removed them: tar and gzip.
+  * The new lintian also detected that we are suggesting grep which it is an
+    essential package too, so removed from the Suggests.
+  * Lintian also detected that this changelog is not UTF-8, to fix it I will
+    not use international characters instead of using UTF-8 for simplicity.
+
+ -- Ivan Baldo <ibaldo@adinet.com.uy>  Sun, 10 Oct 2004 19:02:40 -0200
+
+setedit (0.5.4-1) unstable; urgency=low
+
+  * New upstream version!!!
+  * Based on CVS version 1.617 2004/09/24 18:59:51.
+  * Baurjan Ismagulov didn't updated this changelog to mention that he added a
+    libset-dev package, so I mention it here; it is useful to build RHIDE.
+    Thanks Baurjan for your work!
+    Note: this package must be improved, I think that the aproach should be
+    the same as rhtvision having the version in the package name and
+    conflicting with a virtual package, and I think that the upstream has a
+    configure option to build it so we must investigate and maybe improve it
+    to suit our needs, also the generated libs are huge so maybe there is
+    something that we are doing wrong; for this reasons I will not upload
+    this package yet.
+  * Standards compliance with Policy version 3.6.1.0, no changes.
+  * The new version of the editor has support for debugging programs with GDB
+    using a library done by Salvador called libmigdb, though it doesn't come
+    in the same CVS module as the editor, Salvador says it will come in the
+    tarball and the editor will use it. I didn't test it for this version but
+    I will and then I will upload packages with debugging support included.
+  * Don't Build-Depend on the rhtvision-dev virtual package, instead depend
+    on the required version since thats the reality.
+  * Remove on clean: gettext/Makefile, libbzip2/Makefile, libpcre/Makefile,
+    libz/Makefile, makes/rhide.env, mp3/libamp/rhide.env,
+    mp3/mpegsound/rhide.env.
+
+ -- Ivan Baldo <ibaldo@adinet.com.uy>  Mon, 27 Sep 2004 22:57:35 -0200
+
+setedit (0.5.4-0.1) unstable; urgency=low
+
+  * New version automatically modified by version update scripts
+
+ -- Salvador E. Tropea (SET) <salvador@inti.gov.ar>  Thu, 23 Sep 2004 17:21:41 -0300
+
+setedit (0.5.3-0.2) unstable; urgency=low
+
+  * Add an include file required by rhide.
+
+ -- Baurjan Ismagulov <ibr@ata.cs.hun.edu.tr>  Sat, 17 Jul 2004 22:09:30 +0200
+
+setedit (0.5.3-0.1) unstable; urgency=low
+
+  * New version automatically modified by version update scripts
+
+ -- Salvador E. Tropea (SET) <salvador@inti.gov.ar>  Wed, 22 Oct 2003 16:17:50 -0300
+
+setedit (0.5.2-1) unstable; urgency=low
+
+  * New stable upstream version! Sorry for the lateness, I got a job and I am
+    busy now, though I don't regret!!!
+  * Based on CVS version 1.435 2003/07/23 19:37:56.
+  * Acknowledge upstream changes to Debian packaging:
+    - No more build dependency on Recode.
+    - No more backup of .mak files (not used anymore on the new build
+      system).
+    - New debian/README file with instructions regarding compilation of the
+      package, it is similar to the maintainer.notes file.
+    - Now if the tar fails when doing the backup or the restore, it doesn't
+      stop the compiling or cleaning process since usually it is not critical.
+  * Support for DEB_BUILD_OPTIONS as Policy mandates in section 11.1.
+  * Suggests exuberant-ctags | ctags, woohoo!, cool class browser and symbol
+    completion engine!
+  * Lintian suggested adding a reference to /usr/share/common-licenses/GPL in
+    the copyright file and striping the (s) in Upstream Author(s), and I
+    fully agree :-).
+  * Standards compliance with Policy version 3.5.8.0.
+  * Note: I will not make the migration to po-debconf (new DebConf template
+    translation system) yet, I will wait some more, maybe for the next
+    upstream release. I don't know if that would work on Woody and I would
+    like to release this version for Potato too, since I have not removed it
+    from one of my computers yet and didn't made other changes that prevent
+    building for Potato.
+  * Remove on clean: holidays/Makefile, redhat/setedit-*.*.spec and
+    internac/getcolors.exe.
+  * Backup and restore: internac/getcolors.exe.
+  * Better README.Debian, with a dedicated APT section, a Things to do for
+    the package section and mentioning SET's InfoViewer.
+
+ -- Ivan Baldo <ibaldo@adinet.com.uy>  Sun, 10 Aug 2003 18:39:53 -0300
+
+setedit (0.5.0-1) unstable; urgency=low
+
+  * New stable upstream version! Yes!
+  * Note: I think this will be the last version for Potato.
+  * Stop the war on Iraq, if you are in favour of the war then be aware that
+    you are against the opinion of most of the world and against the United
+    Nations, that means that you are being selfish and not considering the
+    opinion of the majority of the people on this planet.
+  * I have a new bicycle!
+
+ -- Ivan Baldo <ibaldo@adinet.com.uy>  Mon, 31 Mar 2003 18:51:02 -0300
+
+setedit (0.5.0-0.4) unstable; urgency=low
+
+  * Just testing a new alpha version from CVS dated 2 Oct 2002.
+  * Someone stole my bicycle!!!
+
+ -- Ivan Baldo <ibaldo@adinet.com.uy>  Thu,  3 Oct 2002 20:43:35 -0300
+
+setedit (0.5.0-0.3) unstable; urgency=low
+
+  * New upstream alpha version from CVS dated 11 Sep 2002 (big changes, could
+    be unstable).
+  * debian/maintainer.notes: it was very outdated, now contains accurate and
+    more useful information.
+  * Added information about APT repository in README.Debian.
+  * infview package didn't had upstream changelog and README.Debian.
+
+ -- Ivan Baldo <ibaldo@adinet.com.uy>  Wed, 11 Sep 2002 19:53:31 -0300
+
+setedit (0.5.0-0.2) unstable; urgency=low
+
+  * Added build dependency on aalib1-dev, so the AALib-Plasma screensaver
+    gets built.
+  * Added a translation to Spanish of the DebConf template file (new file
+    debian/setedit.templates.es, added to makes/lista).
+
+ -- Ivan Baldo <ibaldo@adinet.com.uy>  Fri,  6 Sep 2002 13:14:05 -0300
+
+setedit (0.5.0-0.1) unstable; urgency=low
+
+  * New upstream alpha version from CVS dated 5 Sep 2002.
+  * Policy now prohibits the use of the add-log-mailing-address Emacs tag so
+    removed it from the changelog (anyway you guessed it right: I don't use
+    Emacs! :-))) ).
+
+ -- Ivan Baldo <ibaldo@adinet.com.uy>  Thu,  5 Sep 2002 19:19:06 -0300
+
+setedit (0.4.57-0.4) unstable; urgency=low
+
+  * New upstream alpha version from CVS dated 25 jul 2002 (that's my
+    birthday!!!).
+  * Changed my email from lubaldo to ibaldo, so updated that everywhere.
+  * Added more comments to the debian/rules file, it seems that Salvador was
+    confused one time :).
+
+ -- Ivan Baldo <ibaldo@adinet.com.uy>  Mon, 29 Jul 2002 19:30:54 -0300
+
+setedit (0.4.57-0.3) unstable; urgency=low
+
+  * DebConf support for generating the /usr/share/setedit/install.log
+    file containing options used when the editor cannot load a desktop
+    file. I think I have done it The Right Way, reading existing values
+    from the install.log file, adding new ones and modifying the existing
+    ones.
+  * Build-Depends on a newer debhelper (>=2.0.54) because of the
+    debconfisation and also Depends on debconf (I don't know if I have to
+    specify a version though).
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Mon, 17 Jun 2002 01:57:43 -0300
+
+setedit (0.4.57-0.2) unstable; urgency=low
+
+  * New unstable alpha version from CVS dated 5 Jun 2002.
+  * build-depend on xlibs-dev after confirming that it's needed and
+    also added libncurses-dev and tar to the list, and removed make
+    since it is included on build-essential.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Thu,  6 Jun 2002 16:46:11 -0300
+
+setedit (0.4.57-0.1) unstable; urgency=low
+
+  * New unstable upstream release, now with native X11 support!
+  * Changed menu items to have 2 entries, one for virtual consoles and
+    another for X11 (maybe I will report a wishlist bug on the menu
+    package because of this).
+  * No more changes needed!!?? This is boring!!! ;-)))
+  * We don't build-depend on xlibs-dev yet, because I am not so sure if
+    that's needed (I will talk with upstream about this).
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Sun, 19 May 2002 15:18:06 -0300
+
+setedit (0.4.54-1) unstable; urgency=low
+
+  * The "Brothers of Argentina have problems, I hope they can get
+    through it soon!" release, which it is dedicated to my argentine
+    neighbors.
+  * New release, with small changes and fixes, this one is supposed to
+    be the One, I mean, the new Stable one, so rejoice!!!
+  * Upstream says that it modified debian/rules to not delete
+    doc/Makefile and internac/Makefile, but it seems it did not.
+    I decided to stick with removing that files, because that's what
+    I think should be done (to leave the source directory identical to
+    the upstream released one, after the clean). I will talk with
+    Salvador about that, not big problem though so don't worry.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Tue, 29 Jan 2002 00:10:56 -0300
+
+setedit (0.4.53-1) unstable; urgency=low
+
+  * The "Ivan hates computers after having good vacations" release.
+    Well, I was on Punta del Este, good beachs, good womans, some fun
+    at night, and no computers :). My hate for computers is temporary
+    and it happens everytime I have good vacations, so don't worry.
+  * New prerelease version, it fixes some memory leaks, improves
+    compilation, some other tiny things, etc.
+  * Remove internac/fix.exe on debian/rules clean.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Tue,  8 Jan 2002 15:12:38 -0300
+
+setedit (0.4.52-2) unstable; urgency=low
+
+  * Well, in the period of last testing of the stable release, some
+    small issues where discovered and fixed. Note that the release was
+    not announced, it was only announced on the setedit-users mailing
+    list and as a prerelease. Lets hope that this becomes the real
+    release.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Tue,  4 Dec 2001 02:10:43 -0300
+
+setedit (0.4.52-1) unstable; urgency=low
+
+  * The "Arriba Uruguay noma!!!" release, Uruguay goes to the Fifa
+    World Soccer Championship Korea-Japan 2002, it was hard but our
+    team made it!
+  * Yes!!! New stable version of the editor!!!
+  * Modified generated info files because Debian's install-info doesn't
+    remove info files that specify "something.info" as their node, it
+    needs "something" specified instead, and also, infview.info was
+    being registered as infeng.info, which prevented it from being
+    accessed from the main info file (the "dir" info file).
+  * The infobrowser alternative (from infview) was being unregistered
+    incorrectly.
+  * Well, that's a lot of bugs I have found just before the stable
+    release! I think two things:
+    1 - I should do a more thorough testing while testing the unstable
+      versions, to avoid surprises like these ones just before a stable
+      release!
+    2 - I don't have good testers of the packages or the people just
+      doesn't bother to report the bugs.
+  
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Mon, 26 Nov 2001 19:36:39 -0300
+
+setedit (0.4.51-4) unstable; urgency=low
+
+  * No changes, just a newer upstream source from CVS and I will upload
+    this version to the repository together with a little newer stable
+    RHTVision, so people can test this release of the editor which is
+    near to be the official stable one.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Sun, 11 Nov 2001 18:00:02 -0300
+
+setedit (0.4.51-3) unstable; urgency=low
+
+  * The package was registering /usr/share/doc/setedit/editor.txt.gz as
+    text documentation to doc-base, but it seems to have changed to
+    setedit.txt.gz sometime and I forgot to modify it on the doc-base
+    control file. I have noticed it when browsing with dpkg-www,
+    lintian and doc-base didn't tell anything about it!
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Fri,  2 Nov 2001 17:30:49 -0300
+
+setedit (0.4.51-2) unstable; urgency=low
+
+  * Updated upstream sources from CVS, it has small bugfixes and tweaks
+    here and there.
+  * Now that I have installed UPX on my system, I realized that the
+    infview binary is allways packed with UPX if it is available, and
+    unfortunately upstream didn't provide an easy way of avoiding this,
+    so I just modified upstream building system to be able to specify
+    a new "--no-comp-exe" option to the configure script and we use
+    that on debian/rules.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Sun, 28 Oct 2001 15:59:16 -0300
+
+setedit (0.4.51-1) unstable; urgency=low
+
+  * New upstream version (still a development release).
+  * Changed Infview Debian package version numbering, yes, again. Now
+    it is of the form "infview_0.2.7-0.4.51-1_i386.deb" and yes, is
+    ugly, but is needed.
+  * Added a Debian specific FAQ to the README.Debian file, explaining
+    why the binaries are SUID root, why the infview package version
+    numbering is like it is, and why the packages are not in Debian.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Sun, 21 Oct 2001 22:05:26 -0300
+
+setedit (0.4.50-1) unstable; urgency=low
+
+  * The "Let's see if I can release while I am sleeping" release.
+    That's because I am tired, I need some sleep and my eyelashes are
+    closing some times, against my will. THIS RELEASE COMES WITHOUT
+    WARRANTY.
+  * Nice new upstream release, long live Salvador!
+  * Upstream added a "buildpackage" script, I don't see the point of
+    it but if it is of some use to Salvador or others, I will keep it.
+  * Modified the new debian/buildpackage script to check before trying
+    to do anything that it is being run from the right directory.
+  * Added clean-debian to PHONY list.
+  * Simplified the backup system by using a TAR archive instead of
+    copying and moving files around. Good idea from Salvador. At the
+    same time now timestamps are preserved so CVS checkins are faster.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Thu, 11 Oct 2001 23:07:58 -0300
+
+setedit (0.4.49-1) unstable; urgency=low
+
+  * New upstream version.
+  * Added missing Conflicts: suidmanager (<< 0.50) to INFView package.
+  * Don't delete mp3/libamp/rhide.env on clean and added it to the
+    backup system.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Sun,  7 Oct 2001 19:54:51 -0300
+
+setedit (0.4.47-2) unstable; urgency=low
+
+  * Create infview package with its own version and not setedit one,
+    beware that I have not used an epoch, so the packaging tools will
+    think that you are downgrading and that this version of infview is
+    older.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Sat, 29 Sep 2001 23:41:40 -0300
+
+setedit (0.4.47-1) unstable; urgency=low
+
+  * New upstream version.
+  * Now clean target uses clean-debian target for the Debian cleaning.
+  * Now it backups and restores original upstream files that are
+    modified during the building process.
+  * No more empty infview directories in the setedit package! I don't
+    know why dh_movefiles doesn't remove the directory. I also
+    discovered something funny: I allways check what the packages have
+    inside using Midnight Commander, but it doesn't show empty
+    directories so I didn't know of the problem until Salvador told me!
+    Extracting with dpkg-deb that directories appear.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Sat, 29 Sep 2001 12:16:59 -0300
+
+setedit (0.4.45-1) unstable; urgency=low
+
+  * New upstream version!
+  * Standards version 3.5.2.0.
+  * Long time ago, the RHTVision package had to be removed from the
+    Debian distribution because of yet unresolved legal problems with
+    Inprise, this package depends on that library and so couldn't be
+    distributed, so, this package is now unofficial.
+  * Updated build-depends.
+  * Updated description, README.Debian, etc. to reflect that this is
+    not an official Debian package.
+  * Use versioned build dependency on DebHelper instead of using
+    deprecated dh_testversion.
+  * Convert from suidregister to statoverride.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Sun, 12 Aug 2001 22:05:56 -0300
+
+setedit (0.4.39-4) unstable; urgency=low
+
+  * Applied patch from upstream author that allows the documentation to
+    be created on systems with a new incompatible version of makeinfo.
+    I have made further modifications to the file doc/set.txt because
+    it was creating the table of contents twice.
+    Also I have commented out the line saying @contents in the files
+    doc/editor.tx and doc/sdg.tx because it was doing weird things to
+    the table of contents.
+    Closes: #53277.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Thu, 30 Dec 1999 04:25:08 -0300
+
+setedit (0.4.39-3) unstable; urgency=low
+
+  * Now builds the standalone InfoViewer and puts it in a different
+    package called infview.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Tue, 21 Dec 1999 16:11:56 -0300
+
+setedit (0.4.39-2) unstable; urgency=low
+
+  * Standards version 3.1.0.
+  * Added Build-Depends.
+  * Architecture set to "any" instead of "i386" as requested by
+    Roman Hodek. This program isn't tested on other architectures other
+    than i386, so, testing is needed and reports of success or failures
+    will be apreciated.
+    Closes: #50319.
+  * Instead of suggesting tetex-bin and tetex-base, now suggests
+    texinfo, since the makeinfo program moved from tetex-bin to the
+    package texinfo.
+  * Call dh_clean without the -k flag in the install target.
+  * Don't use install-stamp (in rules file) anymore, to avoid possible
+    duplicate strings in maintainer script fragment files (see
+    debhelper changelog of version 2.0.56).
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Wed,  1 Dec 1999 13:12:30 -0300
+
+setedit (0.4.39-1) unstable; urgency=low
+
+  * New upstream version:
+    - Code page remaping.
+    - Man page viewer follows links to other manpages.
+    - New Tex and TCL syntax highlights.
+    - new 27 code pages supported!
+    - Various bugfixes and other enhancements.
+  * Now uses new upstream makefile clean target for cleaning.
+  * We prevent building of infoviewer to prevent problems by now.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Tue, 26 Oct 1999 15:07:28 -0300
+
+setedit (0.4.36-2) unstable; urgency=low
+
+  * Better descriptions for the editor (thanks Salvador!).
+  * Now Recommends: man.
+  * Now has manpage for the "e" symlink (lintian complained).
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Wed, 29 Sep 1999 20:35:49 -0300
+
+setedit (0.4.36-1) unstable; urgency=low
+
+  * New upstream version:
+    - Various bugfixes and enhancements.
+    - New building system!
+  * Modified building system for upstream new building system and FHS
+    move.
+  * Now requires DEBHelpers 2.0.40.
+  * DOC-Base support was not working, now works and also registers INFO
+    files.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Wed, 22 Sep 1999 15:05:37 -0300
+
+setedit (0.4.25-2) unstable; urgency=low
+
+  * Applied patch from upstream author to correct the patchenv.pl perl
+    script that was preventing correct compilation.
+  * Initial support for docbase (just plain text documentation, more
+    will follow), untested.
+  * Worked around bug related to the set_new_handler() function that
+    was preventing linkage.
+  * Now in the rhide.env file, we define SUPPORT_INC to none, to avoid
+    linkage of support libraries provided by upstream author and use
+    the Debian ones. Removed a little hack on the rules makefile
+    because of this.
+  * Better maintainer.notes file.
+  * Better README.Debian file.
+  * Added upstream download information in the copyright file.
+  * Added Suggests: grep, doc-base, tetex-bin, tetex-base.
+  * Added dh_testversion 1.2.9, because I use dh_links now.
+  * The /usr/bin/e symlink was set incorrectly.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Tue,  1 Jun 1999 15:27:33 -0300
+
+setedit (0.4.25-1) unstable; urgency=low
+
+  * New upstream version:
+    - Various bugfixes (a lot due to memory problems reported by the
+      YAMD tool).
+    - Uses the new version 2 of the PCRE library.
+    - Now incorporates the Debian building files.
+    - The binary executables are compressed with UPX now (not in Debian
+      tough).
+    - Updated documentation.
+    - Enhanced and killed bugs in the building scripts (partly because
+      of the Debian packaging).
+    - Added syntax highlight for Python.
+    - Now the executable in Linux is called "setedit" instead of "e"
+      and "e" is now a symlink to "setedit".
+    - Renamed the editor info file from "editor.info" to
+      "setedit.info".
+    - Renamed the language file from "editor.mo" to "setedit.mo".
+    - Now the editor searches for its files in the /usr hierarchy
+      instead of only in /usr/local (so, the setting of an environment
+      variable is not necessary now).
+    - Other minor enhancements.
+  * Changed the Debian build scripts to acomodate upstream changes.
+  * Now the executable is suid root because this makes significant
+    improvements on speed and upstream author says it is safe.
+  * Now the Debian build scripts doesn't do a copy and restore of all
+    the "makes" directory, instead it just copies and restores after
+    compilation the files that change only, so, it builds faster now.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Thu, 27 May 1999 20:15:24 -0300
+
+setedit (0.4.24-3) unstable; urgency=low
+
+  * Now -pipe option to gcc passed (faster compilation).
+  * Dummy gpr2mak script not required anymore.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Tue, 30 Mar 1999 14:55:13 -0300
+
+setedit (0.4.24-2) unstable; urgency=low
+
+  * Now the executable of the editor is SUID root registered (much more
+    faster!).
+  * The mp3/libamp/libamp.mak file was not restored to the original on
+    the clean-debian target.
+  * Now the editor info file is registered in the dir main menu
+    info page (I was trying to register it using the debian/info file
+    but it doesn't work that way, I am doing it manually but keep the
+    debian/info file I was trying to use as debian/info.ex in case
+    someone else wants to look in it to see what is wrong with it).
+  * The upstream changelog was called change.log.gz, now it is renamed
+    to changelog.gz to suit Debian policy (Lintian complained).
+  * Now the clean target doesn't depend on clean-debian anymore.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Wed, 24 Mar 1999 18:23:54 -0300
+
+setedit (0.4.24-1) unstable; urgency=low
+
+  * Initial Release.
+  * First early alpha packaging sent to upstream author.
+
+ -- Ivan Baldo <lubaldo@adinet.com.uy>  Tue, 16 Mar 1999 17:18:48 -0300
+
+Local variables:
+mode: debian-changelog
+End:

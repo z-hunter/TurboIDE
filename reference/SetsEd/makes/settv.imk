@@ -1,0 +1,261 @@
+#!/usr/bin/make
+# Automatically generated from RHIDE projects, don't edit
+#
+
+libsettv$(ExLIB):: \
+	obj/diaghelp$(ExOBJ) \
+	obj/dktclock$(ExOBJ) \
+	obj/fileopen$(ExOBJ) \
+	obj/fiopeaid$(ExOBJ) \
+	obj/inputsca$(ExOBJ) \
+	obj/ninputsc$(ExOBJ) \
+	obj/nostatex$(ExOBJ) \
+	obj/nprogbar$(ExOBJ) \
+	obj/nprogres$(ExOBJ) \
+	obj/ntnocast$(ExOBJ) \
+	obj/ntnosost$(ExOBJ) \
+	obj/setstack$(ExOBJ) \
+	obj/sprogbar$(ExOBJ) \
+	obj/sprogres$(ExOBJ) \
+	obj/stnocast$(ExOBJ) \
+	obj/stnonost$(ExOBJ) \
+	obj/tdiagaid$(ExOBJ) \
+	obj/tdiagrow$(ExOBJ) \
+	obj/tinppipe$(ExOBJ) \
+	obj/tnocastc$(ExOBJ) \
+	obj/tnosostr$(ExOBJ) \
+	obj/tprogbar$(ExOBJ) \
+	obj/tprogdia$(ExOBJ) \
+	obj/tprogrdi$(ExOBJ) \
+	obj/tprogres$(ExOBJ) \
+	obj/tstrlbox$(ExOBJ) \
+	obj/uisarray$(ExOBJ) \
+	obj/ussarray$(ExOBJ) \
+	obj/viewplus$(ExOBJ) \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_ARCHIVE)
+
+obj/diaghelp$(ExOBJ):: ../settvuti/diaghelp.cc \
+	compatlayer.h \
+	edspecs.h \
+	tv.h \
+	tv/app.h \
+	tv/button.h \
+	tv/configtv.h \
+	tv/desktop.h \
+	tv/dialog.h \
+	tv/dialogs.h \
+	tv/drawbuf.h \
+	tv/event.h \
+	tv/group.h \
+	tv/intl.h \
+	tv/ipstream.h \
+	tv/msgbox.h \
+	tv/object.h \
+	tv/objects.h \
+	tv/opstream.h \
+	tv/point.h \
+	tv/program.h \
+	tv/pstream.h \
+	tv/rect.h \
+	tv/ssc_streams.h \
+	tv/stddlg.h \
+	tv/streambl.h \
+	tv/system.h \
+	tv/tobjstrm.h \
+	tv/ttypes.h \
+	tv/tvconfig.h \
+	tv/tvobjs.h \
+	tv/tvutil.h \
+	tv/view.h \
+	tv/views.h \
+	tv/window.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/dktclock$(ExOBJ):: ../settvuti/dktclock.cc \
+	ceditint.h \
+	compatlayer.h \
+	configed.h \
+	dktclock.h \
+	settvuti.h \
+	tv.h \
+	tv/configtv.h \
+	tv/drawbuf.h \
+	tv/intl.h \
+	tv/ipstream.h \
+	tv/object.h \
+	tv/objects.h \
+	tv/opstream.h \
+	tv/point.h \
+	tv/pstream.h \
+	tv/ssc_streams.h \
+	tv/stddlg.h \
+	tv/streambl.h \
+	tv/system.h \
+	tv/tobjstrm.h \
+	tv/ttypes.h \
+	tv/tvconfig.h \
+	tv/tvobjs.h \
+	tv/tvutil.h \
+	tv/view.h \
+	tv/views.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/fileopen$(ExOBJ):: ../settvuti/fileopen.cc \
+	compatlayer.h \
+	fileopen.h \
+	tv.h \
+	tv/app.h \
+	tv/button.h \
+	tv/chdirdlg.h \
+	tv/collectn.h \
+	tv/configtv.h \
+	tv/desktop.h \
+	tv/dialog.h \
+	tv/dialogs.h \
+	tv/drawbuf.h \
+	tv/event.h \
+	tv/filecoll.h \
+	tv/filedlg.h \
+	tv/filelist.h \
+	tv/group.h \
+	tv/inputln.h \
+	tv/intl.h \
+	tv/ipstream.h \
+	tv/listbox.h \
+	tv/lstviewr.h \
+	tv/no_mss.h \
+	tv/nscoll.h \
+	tv/nssorcol.h \
+	tv/object.h \
+	tv/objects.h \
+	tv/opstream.h \
+	tv/point.h \
+	tv/program.h \
+	tv/pstream.h \
+	tv/rect.h \
+	tv/searchrc.h \
+	tv/sortcoll.h \
+	tv/sortlibo.h \
+	tv/ssc_streams.h \
+	tv/stddlg.h \
+	tv/streambl.h \
+	tv/system.h \
+	tv/tobjstrm.h \
+	tv/ttypes.h \
+	tv/tvconfig.h \
+	tv/tvobjs.h \
+	tv/tvutil.h \
+	tv/view.h \
+	tv/views.h \
+	tv/window.h \
+	tv/yes_mss.h \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/fiopeaid$(ExOBJ):: ../settvuti/fiopeaid.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/inputsca$(ExOBJ):: ../settvuti/inputsca.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/ninputsc$(ExOBJ):: ../settvuti/names/ninputsc.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/nostatex$(ExOBJ):: ../settvuti/nostatex.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/nprogbar$(ExOBJ):: ../settvuti/names/nprogbar.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/nprogres$(ExOBJ):: ../settvuti/names/nprogres.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/ntnocast$(ExOBJ):: ../settvuti/names/ntnocast.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/ntnosost$(ExOBJ):: ../settvuti/names/ntnosost.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/setstack$(ExOBJ):: ../settvuti/setstack.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/sprogbar$(ExOBJ):: ../settvuti/streams/sprogbar.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/sprogres$(ExOBJ):: ../settvuti/streams/sprogres.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/stnocast$(ExOBJ):: ../settvuti/streams/stnocast.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/stnonost$(ExOBJ):: ../settvuti/streams/stnonost.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/tdiagaid$(ExOBJ):: ../settvuti/tdiagaid.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/tdiagrow$(ExOBJ):: ../settvuti/tdiagrow.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/tinppipe$(ExOBJ):: ../settvuti/tinppipe.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/tnocastc$(ExOBJ):: ../settvuti/tnocastc.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/tnosostr$(ExOBJ):: ../settvuti/tnosostr.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/tprogbar$(ExOBJ):: ../settvuti/tprogbar.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/tprogdia$(ExOBJ):: ../settvuti/tprogdia.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/tprogrdi$(ExOBJ):: ../settvuti/tprogrdi.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/tprogres$(ExOBJ):: ../settvuti/tprogres.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/tstrlbox$(ExOBJ):: ../settvuti/tstrlbox.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/uisarray$(ExOBJ):: ../settvuti/uisarray.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/ussarray$(ExOBJ):: ../settvuti/ussarray.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+
+obj/viewplus$(ExOBJ):: ../settvuti/viewplus.cc \
+	$(MAKEFILE_DEPS) 
+	$(RHIDE_COMPILE_CC)
+

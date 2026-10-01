@@ -1,0 +1,56 @@
+#!/usr/bin/make
+
+##########################################################################################
+#
+# Beggining of maintained lines
+#
+##########################################################################################
+#
+# Source directories
+#
+vpath_src=../infview ../extra ../mp3 ../easydiag ../infview/names ../infview/streams \
+	../librhuti ../settvuti ../settvuti/names ../settvuti/streams ../mainsrc
+#
+# Include directories
+#
+INCLUDE_DIR=../include
+SETEDIT_INC_DIR=../setedit/include
+SETTVUTI_INC_DIR=../settvuti/include
+INFVIEW_INC_DIR=../infview/include
+EXTRA_INC_DIR=../extra
+EASYDIAG_INC_DIR=../easydiag
+LIBRHUTI_INC_DIR=../librhuti
+MP3_PREV_DIR=..
+INCLUDE_DIRS=$(INCLUDE_DIR) $(SETEDIT_INC_DIR) $(SETTVUTI_INC_DIR) \
+	$(SDG_INC_DIR) $(INFVIEW_INC_DIR) $(TVISION_INC) $(EXTRA_INC_DIR) \
+	$(EASYDIAG_INC_DIR) $(LIBRHUTI_INC_DIR) $(SUPPORT_INC) \
+	$(MP3_INC_DIR) $(CALCU_INC_DIR)
+C_EXTRA_FLAGS=-DFOR_EDITOR
+
+##########################################################################################
+#
+# Beggining of fixed part
+#
+##########################################################################################
+
+#
+# Common rules used by RHIDE.
+# It also includes rhide.env.
+#
+include common.imk
+
+#
+# All the RHIDE data should come from here.
+#
+ifdef MAINTAINER_MODE
+ ExIMK=.imk
+else
+ ExIMK=.umk
+endif
+include infview$(ExIMK)
+
+#
+# This file pulls all the .imk
+#
+include includer.imk
+

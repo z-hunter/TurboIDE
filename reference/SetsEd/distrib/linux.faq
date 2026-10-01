@@ -1,0 +1,374 @@
+SET's Editor under Linux FAQ:
+
+0) Installation problems
+0.1) Q: I type e in the shell and the editor doesn't start, why?
+0.2) Q: The editor complains about something related to SET_FILES not defined
+0.3) Q: I get "wrong command name at line NN of menubind.smn", what's up?
+0.4) Q: Can I install in my home dir? how can I tell the editor where to look
+for configuration files?
+
+1) Keyboard problems
+1.1) Q: Why the right Alt key doesn't work for menues?
+1.2) Q: If I start the editor from midnight commander the keyboard doesn't
+work very well, why?
+
+2) Mouse problems
+2.1) Q: Why mouse doesn't work?
+2.2) Q: How can I copy/paste using gpm?
+
+3) Video problems
+3.1) Q: Can I make screen output faster?
+3.1) Q: SETEdit can't open /dev/ptyX device, why?
+3.2) Q: Why my lat1 fonts doesn't fix the problems and looks exactly like
+lat1u fonts?
+
+4) sLisp macro language
+4.1) Q: How can I extend it?
+
+5) Edition modes
+5.1) Q: What options should I use to get real tabs (ascii 9)?
+
+=============================================================================
+0) Installation problems
+
+0.1) Q: I type e in the shell and the editor doesn't start, why?
+
+A: After installing the editor by default it is located in /usr/bin so
+if your path doesn't contain this directory you must add it.
+  If you are using bash you must edit the .bash_profile file and include this
+directory in the definition of the PATH variable. Here is how it looks in my
+system:
+
+PATH=".:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/bin/X11"
+
+-----------------------------------------------------------------------------
+0.2) Q: The editor complains about something related to SET_FILES not defined
+
+*** Currently it only happens if you don't install in /usr/bin or ***
+*** /usr/local/bin ***                                            ***
+A: You must read the readme.1st. By default the file is located on the
+/usr/doc/setedit directory.
+  Basically you must add the definition of the variable:
+
+SET_FILES="/usr/share/setedit"
+
+  And export it with the export command, here is an example:
+
+export PATH PS1 RHIDESRC SET_FILES ESCDELAY
+
+Note: This syntax is for bash, I don't use other shell in UNIX.
+
+-----------------------------------------------------------------------------
+0.3) Q: I get "wrong command name at line NN of menubind.smn", what's up?
+
+  Be sure you don't have another version of the editor installed in your
+system. I changed the default installation directory from /usr/local/bin to
+/usr/bin so perhaps you have the old copy and it is *first* in your path so
+you are loading the new menu files with the old version of the binary.
+
+-----------------------------------------------------------------------------
+0.4) Q: Can I install in my home dir? how can I tell the editor where to look
+for configuration files?
+
+  You can indicate to the editor where to look special files, here is how:
+A) Configuration files: Define the SET_FILES environment variable to point
+to the directory where configuration files are located.
+B) Help files: Define or modify the INFOPATH environment variable. That's a
+path so you can put as a first directory one located at your home and the
+rest separated with :
+C) Man pages: Define or modify MANPATH, read man manpage for more info.
+D) Internationalization files: Define SET_LOCALEDIR pointing to the directory
+where i18n files for the editor are installed.
+
+=============================================================================
+1) Keyboard problems
+
+1.1) Q: Why the right Alt key doesn't work for menues?
+
+A:In v0.4.26 I taked the desition to make Alt keys different by default. You
+can change it from "Tool&Ops|Options|Keyboard|Setup Alt keys".
+  I did it so you can paste using gpm. For it you can use the right alt+mouse
+middle button. If both alt keys are interpreted as the same key the pasted
+text will be interpreted as Alt+keys and won't be correctly pasted.
+  If you don't use the paste feature of gpm you can setup thealt keys to be
+the same key.
+  You can't reverse it, I mean, you can't use left alt for gpm and right alt
+for menues. That's currently a limitation.
+
+
+-----------------------------------------------------------------------------
+1.2) Q: If I start the editor from midnight commander the keyboard doesn't
+work, why?
+
+A: Is a fault in mc, this program runs your childs in a ttypN console (like
+when you telnet) so the childs doesn't have full access to some IOCTLs and
+devices. Just avoid using the editor from inside programs that doesn't
+cooperate with the OS to work in a multitasking environment. Run the editor
+in other virtual console.
+
+
+=============================================================================
+2) Mouse problems
+
+2.1) Q: Why mouse doesn't work?
+
+A: If you are not running in a ttyN device the mouse won't work (xterm is an
+exception). To know it type tty at the command prompt, if it looks like
+/dev/tty3 it keep reading.
+  The editor needs gpm loaded, most Linux distributions installs it. To be
+sure run "ps wax | grep gpm", you should get two lines, one of gpm itself and
+the other containing "grep gpm", if you only get the last then gpm is not
+running in your system.
+  The editor is compiled statically in the .tar.gz distribution, that's
+needed because a lot of people is using libc 5. I couldn't find any way to
+link libgpm dynamically and the rest statically so the editor uses gpm 1.13,
+lamentably gpm >= 1.14 is incompatible with previous versions.
+  If you can't install gpm 1.13 in your system just compile the editor from
+sources.
+
+
+-----------------------------------------------------------------------------
+2.2) Q: How can I copy/paste using gpm?
+
+A: Hold down the right Alt key and do the selection or copy or paste as you
+normally do with gpm.
+   When the right alt key is pressed the control of the mouse is left to
+gpm.
+   Note that gpm doesn't work in X terminals.
+
+   
+=============================================================================
+3) Video problems
+
+3.1) Q: Can I make screen output faster?
+
+A: The editor is much faster is you have access to the /dev/vcsa* devices.
+These devices maps the console video buffer.
+  In order to give access to regular users (not just root) to these devices I
+recommend:
+
+1) Create a group for people that will have access to it.
+
+# addgroup vcs
+
+2) Change the /dev/vcs* owner so they belong to this group.
+
+# chown root.vcs /dev/vcs*
+
+3) Change the /dev/vcs* rights so the group can read and write to them.
+
+# chmod 0660 /dev/vcs*
+
+4) Add the user/s you want to grant access to this group.
+
+# adduser NAME vcs
+
+-----------------------------------------------------------------------------
+3.2) Q: SETEdit can't open /dev/ptyX device, why?
+
+A: I know it isn't for a FAQ but the case of Attila is quite interesting:
+
+"I found the fault. I opend the ssh connection as root an then made a su to
+my normal user account. But setedit couldn't open the pty device since it
+was owned by root.
+
+Attila Kinali"
+
+-----------------------------------------------------------------------------
+3.3) Q: Why my lat1 fonts doesn't fix the problems and looks exactly like
+lat1u fonts?
+
+A: Some Linux distros included wrong fonts. An example is Debian GNU/Linux
+Potato. The package console-data (dated in 1999.08.29) have wrong lat1 fonts,
+they are in fact lat1u fonts, you can verify it using diff.
+Fixed fonts can be downloaded from:
+
+http://www.balug.org.ar/ConfTips/Fonts/index.html
+
+Look at the bottom of the page.
+
+=============================================================================
+4) sLisp macro language
+
+4.1) How can I extend it?
+
+A: You must have C++ skills. The important source files are located in the
+sdg directory and are prefixed with "mli". The header files are located in
+sdg/include. Here is a small text I wrote for a user (Thiago) that
+contributed an sLisp command. It helped Thiago so it could help you too:
+
+<---------------------
+> I've been reading the code of the sLisp interpreter, because I am
+> trying to implement 'cond'. But I am having a hard time trying to
+> understand it. Can you help me?
+
+Of course but be patient I don't have long amounts of time.
+
+> Can you give an overview of how is works?
+> How is the sLisp code stored in memory after it is read?
+
+There is a variable type for code, is basically some kind of string
+variable that holds a function.
+
+> I noticed that there is a "main" function in mli.cc. Is it possible
+> to make a stand-alone version of the interpreter? How?
+
+I think it was created for the first tests and trying to compile it
+now could be a challenge.
+
+> What is the difference between TLispCode and TLispCommand?
+
+When you define a macro you are creating some kind of function. This
+is stored in a code variable.
+A code variable is like a string that contains a sLisp function.
+When the parser tries to reduce a one statement like it (command ....)
+uses a Command variable. That's just like an integer that indicates
+which command must be applied to the arguments list.
+
+I think the most important thing you must know to achieve your
+objetive is how to extend the language.
+sLisp have a group of core functions, they are defined in mli.cc look
+for TMLIBase::cNames[MLIBaseCommands] and Command
+TMLIBase::cComms[MLIBaseCommands]. The MLIBaseCommands value is
+defined in mlibase.h, to add a new command or operator you must first
+increment the counter and then add the name and function that
+implements it to the arrays (char *TMLIBase::sNames[MLIBaseSymbols]
+and Command TMLIBase::sComms[MLIBaseSymbols] for operators).
+The core functionallity is extended by derived classes. One
+specializes sLisp for SDG and the other for the editor. Commands that
+only works for an edition buffer are defined in mliedito.cc (see char
+*TMLIEditor::cNames[MLIEditorCommands]) The number of defined commands
+is in mliedito.h.
+To reduce the ammount of typing sLisp commands implementations relies
+on some cleaver macros.
+One important detail is that Lisp language is evaluated just like a
+stack, things are ever nested. For this reason you'll see every
+function will release your arguments from this stack at exit.
+[Note: It applies to local copies of the arguments, the real arguments
+are automatically released].
+Let me show you a simple function:
+
+DecFun(MLIBaseLeft)
+{
+ int l;
+ LocVarStr(string);
+ LocVarInt(left);
+ 
+ CheckNumParams(cant!=2);
+ GetString(0,string);
+ GetInteger(1,left);
+ 
+ l=left->val;
+ if (l>string->len)
+    l=string->len;
+ 
+ MLIRetStrLen(string->str,l);
+ 
+ CleanUp:
+ destroyFloatVar(string);
+ destroyFloatVar(left);
+}
+
+DecFun macro declares the C arguments list for this function, all
+sLisp commands have the same so this macro abstracts it.
+LocVarStr(string); declares a sLisp variable of type String called
+string. That's just a pointer to object declaration.
+In a similar way LocVarInt(left); declares an integer variable called
+left.
+Those are just pointers and doesn't have any value, in fact they are
+null pointers.
+To check we got the right number of arguments we use:
+CheckNumParams(cant!=2); here if the number of arguments is !=2 a
+parser error is generated. Some arguments could be optional and is
+possible to implement functiona that takes a arbitrary number of
+arguments. The cant variable says how many arguments we got.
+To retrieve the arguments we use: GetString(0,string) and
+GetInteger(1,left) the first takes a string that is the first argument
+in the list (index 0) and the second takes an integer. They assign
+their value to the variables we defined at the beginning of the
+function. If the argument tipe doesn't match the code generates a
+syntax error (or something like that). You can retreive just a
+variable without speciying the type and act according the type.
+The next 3 lines implements the function core.
+To return a new string we use MLIRetStrLen(string->str,l).
+And finally comes a clean up. This is a label because the above
+mentioned macros jumps here in case of error.
+Here you must release any variable used.
+Take a look at mlibase.h to know about the available macros.
+As you can see the code is simple and clean thanks to the macros.
+
+Here is an interesting example: eval
+
+DecFun(MLIBaseEval)
+{
+ int i;
+ LocVar(Variable);
+ 
+ for (i=0; i<cant; i++)
+    {
+     GetVar(i,Variable);
+     if (i+1==cant)
+        MLIRetObj(Variable);
+     else
+        destroyFloatVar(Variable);
+    }
+ CleanUp:
+ return;
+}
+
+Looks quite simple and could be even confusing. The first interesting
+thing here is that we use LocVar and GetVar, they takes just a
+variable. It doesn't matter what type. When you take a variable it
+could be just a variable (string, integer, etc.) or it could be a Code
+variable. The GetVar applied to a Code variable evaluates it to reduce
+the Code into a simple variable. So here just getting each variable is
+enough to evaluate all the statements. The number of arguments is
+arbitrary and we just use a for. The code returns the last object we
+evaluated, not a copy, and that's why we destroy all but the last.
+And here is the if example. I don't remmember why but it is
+implemented without all the macros:
+
+void MLIBaseIf(TMLIBase *o,int start ,int cant)
+{
+ if (cant<2 || cant>3)
+   {
+    o->Error=MLINumParam;
+    MLIRetNULL();
+    return;
+   }
+ TLispVar *p=o->Solve(start);
+ int boolval=o->MLIBooleanValOf(p);
+ destroyFloatVar(p);
+ if (boolval)
+    MLIRetObj(o->Solve(start+1));
+ else
+   if (cant==3)
+      MLIRetObj(o->Solve(start+2));
+   else
+      MLIRetInt(0);
+}
+
+Here you can see what's inside the usual macros like GetxxxVar, the
+->Solve is needed to evaluate an argument.
+<---------------------
+
+If you need more information just e-mail me.
+
+=============================================================================
+5) Edition modes
+
+5.1) What options should I use to get real tabs (ascii 9)?
+
+A: Most users that indents code using tabs uses the following options (Alt+G
+or Alt+L):
+
+Autoindent: ON
+Use Tabs: ON
+Intelligent C indent: OFF
+Optimal Fill: ON
+Don't move inside tabs: ON
+Tab smart indents: OFF
+Use indent size: OFF
+Backspace unindents: OFF
+
+

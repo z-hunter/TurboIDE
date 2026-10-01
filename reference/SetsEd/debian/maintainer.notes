@@ -1,0 +1,30 @@
+How to unpack and prepare the files:
+    Make sure that the debian/rules file is executable
+(chmod 755 debian/rules).
+    In the root directory where you unpacked there's a file called
+version.txt. This file tells the version of the editor. See in the file
+debian/changelog if it has an entry with the current version number of the
+editor. If it doesn't, then add an entry with the command
+dch -v 0.4.36-0.1 "Personal use unofficial version." (replacing 0.4.36 with
+the current version number as shown in version.txt).
+
+How to make the .deb, .tar.gz, .dsc and .changes files:
+    cd setedit-directory
+    dpkg-buildpackage -rfakeroot
+
+To check the package (binary and source):
+    cd ..
+    lintian -i *.deb *.dsc
+
+To clean everything after building:
+    cd setedit-directory
+    fakeroot debian/rules clean
+
+Other notes:
+    - There is a clean-debian target on the debian/rules file, it only cleans
+      Debian specific files and not upstream build files. It is useful when
+      you just want for example to rebuild the package without recompiling
+      the sources (use debian/rules clean-debian).
+    - To rebuild the packages without recompiling the sources, use the binary
+      target on the debian/rules file (debian/rules binary).
+

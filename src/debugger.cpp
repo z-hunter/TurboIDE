@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include "debugger.h"
+#include "gdb_mi.h"
 
 #include <algorithm>
 #include <atomic>
@@ -11,6 +12,8 @@
 #include <utility>
 
 namespace {
+using gdbmi::recordEnd;
+using gdbmi::stringAttribute;
 std::atomic_bool interruptRequested{false};
 
 BOOL WINAPI handleDebugControlEvent(DWORD event) {
@@ -63,31 +66,6 @@ std::string miQuote(const std::string &value) {
     }
     result += '"';
     return result;
-}
-
-std::string miStringAttribute(const std::string &object, const std::string &name) {
-    const std::string key = name + "=\"";
-    size_t pos = object.find(key);
-    if (pos == std::string::npos) return {};
-    pos += key.size();
-    std::string value;
-    bool escaped = false;
-    for (; pos < object.size(); ++pos) {
-        const char ch = object[pos];
-        if (escaped) {
-            if (ch == 'n') value += '\n';
-            else if (ch == 'r') value += '\r';
-            else value += ch;
-            escaped = false;
-        } else if (ch == '\\') {
-            escaped = true;
-        } else if (ch == '"') {
-            break;
-        } else {
-            value += ch;
-        }
-    }
-    return value;
 }
 
 std::wstring fromUtf8(const std::string &value) {
@@ -176,6 +154,15 @@ bool GdbSession::launchGdb(std::string &error) {
         error = "Cannot start GDB.";
         return false;
     }
+    if (usable(processJob_) && !AssignProcessToJobObject(processJob_, process.hProcess)) {
+        TerminateProcess(process.hProcess, ERROR_CANCELLED);
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
+        CloseHandle(inputWrite);
+        CloseHandle(outputRead);
+        error = "Cannot place GDB in TurboIDE's process job.";
+        return false;
+    }
     CloseHandle(process.hThread);
     gdbProcess_ = process.hProcess;
     gdbInput_ = inputWrite;
@@ -228,7 +215,7 @@ bool GdbSession::sendCommand(const std::string &command, std::string &reply,
             reply = *found;
             pendingLines_.erase(found);
             if (reply.rfind(prefix + "^error", 0) == 0) {
-                error = miStringAttribute(reply, "msg");
+                error = stringAttribute(reply, "msg");
                 if (error.empty()) error = "GDB rejected command: " + command;
                 return false;
             }
@@ -252,16 +239,23 @@ bool GdbSession::waitForStop(DebugStop &stop, std::string &error) {
         if (found != pendingLines_.end()) {
             const std::string event = *found;
             pendingLines_.erase(found);
-            stop.reason = miStringAttribute(event, "reason");
-            const std::string file = miStringAttribute(event, "fullname");
+            stop.reason = stringAttribute(event, "reason");
+            stop.signalName = stringAttribute(event, "signal-name");
+            stop.signalMeaning = stringAttribute(event, "signal-meaning");
+            const std::string file = stringAttribute(event, "fullname");
             if (!file.empty()) stop.file = std::filesystem::path(fromUtf8(file));
             else {
-                const std::string relative = miStringAttribute(event, "file");
+                const std::string relative = stringAttribute(event, "file");
                 if (!relative.empty()) stop.file = std::filesystem::path(fromUtf8(relative));
             }
-            const std::string line = miStringAttribute(event, "line");
+            const std::string line = stringAttribute(event, "line");
             stop.line = line.empty() ? 0 : std::atoi(line.c_str());
             stop.exited = stop.reason.rfind("exited", 0) == 0;
+            const std::string exitCode = stringAttribute(event, "exit-code");
+            if (!exitCode.empty()) {
+                stop.exitCode = static_cast<int>(std::strtol(exitCode.c_str(), nullptr, 0));
+                stop.hasExitCode = true;
+            }
             running_ = false;
             return true;
         }
@@ -281,8 +275,12 @@ bool GdbSession::waitForStop(DebugStop &stop, std::string &error) {
             interruptDeadline = GetTickCount64() + 1000;
         }
         if (usable(debuggeeProcess_) && WaitForSingleObject(debuggeeProcess_, 0) == WAIT_OBJECT_0) {
-            stop.reason = "exited-signalled";
+            DWORD code = 0;
+            GetExitCodeProcess(debuggeeProcess_, &code);
+            stop.reason = "exited";
             stop.exited = true;
+            stop.exitCode = static_cast<int>(code);
+            stop.hasExitCode = true;
             running_ = false;
             return true;
         }
@@ -318,6 +316,16 @@ bool GdbSession::start(const std::filesystem::path &executable,
     userScreen_ = userScreen;
     consoleInput_ = consoleInput;
 
+    processJob_ = CreateJobObjectW(nullptr, nullptr);
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION jobLimits{};
+    jobLimits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    if (!usable(processJob_) || !SetInformationJobObject(processJob_, JobObjectExtendedLimitInformation,
+            &jobLimits, sizeof(jobLimits))) {
+        error = "Cannot create the debugger process job.";
+        closeHandles();
+        return false;
+    }
+
     HANDLE childInput = inheritableDuplicate(consoleInput);
     HANDLE childOutput = inheritableDuplicate(userScreen);
     if (!usable(childInput) || !usable(childOutput)) {
@@ -345,6 +353,15 @@ bool GdbSession::start(const std::filesystem::path &executable,
     CloseHandle(childOutput);
     if (!created) {
         error = "Cannot start the debuggee.";
+        closeHandles();
+        return false;
+    }
+    if (!AssignProcessToJobObject(processJob_, target.hProcess)) {
+        TerminateProcess(target.hProcess, ERROR_CANCELLED);
+        CloseHandle(target.hThread);
+        CloseHandle(target.hProcess);
+        error = "Cannot place the debuggee in TurboIDE's process job.";
+        closeHandles();
         return false;
     }
     debuggeeProcess_ = target.hProcess;
@@ -360,6 +377,9 @@ bool GdbSession::start(const std::filesystem::path &executable,
     std::string reply;
     if (!sendCommand("-gdb-set pagination off", reply, error) ||
         !sendCommand("-gdb-set confirm off", reply, error) ||
+        !sendCommand("-gdb-set may-call-functions on", reply, error) ||
+        !sendCommand("-gdb-set may-write-memory on", reply, error) ||
+        !sendCommand("-gdb-set may-write-registers on", reply, error) ||
         !sendCommand("-file-exec-and-symbols " + miQuote(utf8(executable.wstring())), reply, error)) {
         stop(error);
         return false;
@@ -383,7 +403,7 @@ bool GdbSession::start(const std::filesystem::path &executable,
         if (line.rfind("*stopped", 0) == 0) {
             attachStopped = true;
         } else if (line.rfind(attachToken + "^error", 0) == 0) {
-            error = miStringAttribute(line, "msg");
+            error = stringAttribute(line, "msg");
             if (error.empty()) error = "GDB could not attach to the debuggee.";
             break;
         } else {
@@ -463,46 +483,81 @@ std::vector<DebugVariable> GdbSession::locals(std::string &error) {
     if (variables == std::string::npos) return result;
     size_t pos = variables + 11;
     while ((pos = reply.find("{name=\"", pos)) != std::string::npos) {
-        size_t end = reply.find('}', pos);
+        const size_t end = recordEnd(reply, pos);
         if (end == std::string::npos) break;
-        const std::string object = reply.substr(pos, end - pos + 1);
+        const std::string object = reply.substr(pos, end - pos);
         DebugVariable variable;
-        variable.name = miStringAttribute(object, "name");
-        variable.value = miStringAttribute(object, "value");
-        variable.type = miStringAttribute(object, "type");
+        variable.name = stringAttribute(object, "name");
+        variable.value = stringAttribute(object, "value");
+        variable.type = stringAttribute(object, "type");
         if (!variable.name.empty()) result.push_back(std::move(variable));
-        pos = end + 1;
+        pos = end;
     }
     return result;
 }
 
-bool GdbSession::handleInterrupt(std::string &error) {
-    if (!running_) return true;
-    std::string reply;
-    return sendCommand("-exec-interrupt", reply, error);
+bool GdbSession::evaluate(const std::string &expression, std::string &value,
+                          std::string &error) {
+    error.clear();
+    value.clear();
+    if (running_) { error = "Watches can only be evaluated while the program is stopped."; return false; }
+    std::string reply, firstError;
+    const auto set = [&](const char *setting, bool enabled, std::string &why) {
+        std::string ignored;
+        return sendCommand(std::string("-gdb-set ") + setting + (enabled ? " on" : " off"), ignored, why);
+    };
+    if (!set("may-call-functions", false, firstError) ||
+        !set("may-write-memory", false, firstError) ||
+        !set("may-write-registers", false, firstError)) {
+        error = firstError;
+    } else {
+        sendCommand("-data-evaluate-expression " + miQuote(expression), reply, error);
+        if (error.empty()) {
+            value = stringAttribute(reply, "value");
+            if (value.empty() && reply.find("value=\"\"") == std::string::npos)
+                error = "GDB returned no value for this expression.";
+        }
+    }
+    std::string restoreError;
+    const bool callsRestored = set("may-call-functions", true, restoreError);
+    const bool memoryRestored = set("may-write-memory", true, restoreError);
+    const bool registersRestored = set("may-write-registers", true, restoreError);
+    if (!callsRestored || !memoryRestored || !registersRestored) {
+        error = "Could not restore GDB's write permissions: " + restoreError;
+        return false;
+    }
+    return error.empty();
 }
 
 bool GdbSession::stop(std::string &error) {
-    if (usable(gdbProcess_)) {
-        if (running_) {
-            std::string interruptError;
-            handleInterrupt(interruptError);
-            DebugStop ignored;
-            waitForStop(ignored, interruptError);
-        }
-        std::string reply;
-        std::string ignored;
-        sendCommand("-gdb-exit", reply, ignored);
-        WaitForSingleObject(gdbProcess_, 1000);
-    }
     if (usable(debuggeeProcess_)) {
         if (WaitForSingleObject(debuggeeProcess_, 0) == WAIT_TIMEOUT) {
-            TerminateProcess(debuggeeProcess_, ERROR_CANCELLED);
-            WaitForSingleObject(debuggeeProcess_, 2000);
+            if (running_ && usable(gdbInput_)) {
+                const std::string interrupt = std::to_string(token_++) + "-exec-interrupt\n";
+                DWORD written = 0;
+                WriteFile(gdbInput_, interrupt.data(), static_cast<DWORD>(interrupt.size()),
+                          &written, nullptr);
+            }
+            if (WaitForSingleObject(debuggeeProcess_, 1500) == WAIT_TIMEOUT &&
+                !TerminateProcess(debuggeeProcess_, ERROR_CANCELLED))
+                error = "Cannot terminate the debuggee created by TurboIDE.";
+            if (WaitForSingleObject(debuggeeProcess_, 2000) == WAIT_TIMEOUT && error.empty())
+                error = "The debuggee did not exit after termination.";
+        }
+    }
+    if (usable(gdbProcess_) && WaitForSingleObject(gdbProcess_, 0) == WAIT_TIMEOUT) {
+        if (usable(gdbInput_)) {
+            const std::string quit = std::to_string(token_++) + "-gdb-exit\n";
+            DWORD written = 0;
+            WriteFile(gdbInput_, quit.data(), static_cast<DWORD>(quit.size()), &written, nullptr);
+        }
+        if (WaitForSingleObject(gdbProcess_, 1000) == WAIT_TIMEOUT) {
+            TerminateProcess(gdbProcess_, ERROR_CANCELLED);
+            WaitForSingleObject(gdbProcess_, 2000);
         }
     }
     closeHandles();
-    return true;
+    return error.empty();
 }
 
 bool GdbSession::takeKeyboardInterrupt(HANDLE input) {
@@ -529,7 +584,7 @@ void GdbSession::closeHandles() {
         handlerRegistered_ = false;
     }
     for (HANDLE *handle : {&gdbInput_, &gdbOutput_, &gdbProcess_,
-                           &debuggeeThread_, &debuggeeProcess_}) {
+                           &debuggeeThread_, &debuggeeProcess_, &processJob_}) {
         if (usable(*handle)) CloseHandle(*handle);
         *handle = INVALID_HANDLE_VALUE;
     }

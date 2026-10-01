@@ -1,0 +1,3 @@
+#!/bin/sh
+scp *.html *.txt *.css set,setedit@web.sourceforge.net:htdocs
+

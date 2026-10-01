@@ -1,0 +1,65 @@
+#!/bin/sh
+# When upgrading the following doesn't need to be done...
+if [ $1 != "upgrade" ] ; then
+    # FIXME: The priority is 90 and it was taken from the FTE postinst, I don't know what value to put there...
+    update-alternatives --install /usr/bin/editor editor /usr/bin/setedit 90 \
+        --slave /usr/share/man/man1/editor.1.gz editor.1.gz /usr/share/man/man1/setedit.1.gz
+
+    # Doing this manually because the debian/info file doesn't seem to work, take a
+    # look in debian/info.ex and tell me what is wrong with it!
+    # We don't need to provide a description, it is provided in the info file itself.
+    install-info --quiet --section "Text Editors" "Text Editors" /usr/share/info/setedit.info.gz
+fi
+
+# DebConf support:
+. /usr/share/debconf/confmodule
+cfgfile="/usr/share/setedit/install.log"
+# Create configuration file if it doesn't exist:
+if [ ! -e $cfgfile ] ; then
+	echo "#
+# Default Installation Options file, created on installation with DebConf.
+# These options will be used when no desktop file can be loaded.
+# You can modify these options editing this file and/or using
+# dpkg-reconfigure.
+#
+[Install]" > $cfgfile
+fi
+# Add possibly new options:
+if ! grep 'CentralDesktopFile=' $cfgfile >/dev/null 2>&1 ; then
+	echo "CentralDesktopFile=0" >> $cfgfile
+fi
+if ! grep 'TabsForIndent=' $cfgfile >/dev/null 2>&1 ; then
+	echo "TabsForIndent=0" >> $cfgfile
+fi
+if ! grep 'CreateBackUps=' $cfgfile >/dev/null 2>&1 ; then
+	echo "CreateBackUps=1" >> $cfgfile
+fi
+# Get the options (is better to check for non default option, so in case of
+# problems the default will be set):
+db_get setedit/central_desktop_file
+if [ "$RET" = "Use a central desktop file" ] ; then
+	CentralDesktopFile=1
+else
+	CentralDesktopFile=0
+fi
+db_get setedit/tabs_for_indent
+if [ "$RET" = "Tabs" ] ; then
+	TabsForIndent=1
+else
+	TabsForIndent=0
+fi
+db_get setedit/create_backups
+if [ "$RET" = "No" ] ; then
+	CreateBackUps=0
+else
+	CreateBackUps=1
+fi
+cat $cfgfile | \
+	sed "s/CentralDesktopFile=./CentralDesktopFile=$CentralDesktopFile/" | \
+	sed "s/TabsForIndent=./TabsForIndent=$TabsForIndent/" | \
+	sed "s/CreateBackUps=./CreateBackUps=$CreateBackUps/" \
+	> $cfgfile.new
+mv $cfgfile.new $cfgfile
+
+
+#DEBHELPER#
