@@ -99,9 +99,19 @@ if(_tv_format_already_patched EQUAL -1)
     file(WRITE "${_tv_editor_header}" "${_tv_editor_patched}")
 endif()
 
-add_executable(turboide src/main.cpp src/build.cpp src/project.cpp src/run.cpp src/debugger.cpp src/syntax.cpp src/settings.cpp src/desktop_session.cpp)
+add_executable(turboide src/main.cpp src/build.cpp src/project.cpp src/run.cpp src/debugger.cpp src/syntax.cpp src/editor_features.cpp src/settings.cpp src/desktop_session.cpp)
 target_compile_features(turboide PRIVATE cxx_std_17)
 target_link_libraries(turboide PRIVATE tvision)
+add_custom_command(TARGET turboide POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:turboide>/cfgfiles"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/reference/SetsEd/cfgfiles/pmacros.pmc"
+            "$<TARGET_FILE_DIR:turboide>/cfgfiles/pmacros.pmc"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/reference/SetsEd/cfgfiles/cpmacros.pmc"
+            "$<TARGET_FILE_DIR:turboide>/cfgfiles/cpmacros.pmc"
+    VERBATIM
+)
 if(MSVC)
     target_compile_options(turboide PRIVATE /utf-8)
 endif()

@@ -8,6 +8,7 @@
 #include <tvision/tv.h>
 
 #include <vector>
+#include <string>
 
 struct IDETheme {
     IDETheme();
@@ -24,6 +25,7 @@ struct IDETheme {
     TColorAttr diagnosticLine = 0x4E;
     TColorAttr executionLine = 0xE0;
     TColorAttr breakpointLine = 0x4F;
+    TColorAttr matchingBracket = 0x4F;
     TColorAttr buildStatus = 0x1B;
 };
 
@@ -31,8 +33,15 @@ IDETheme &ideTheme();
 void setEditorDiagnostic(TFileEditor *editor, int line);
 void setEditorDebugState(TFileEditor *editor, const std::vector<int> &breakpoints,
                          int executionLine);
+void setEditorPrefixHint(TFileEditor *editor, int mode);
+void advanceEditorPrefixHintPage(TFileEditor *editor);
+bool editorSupportsPrefixKeys(TFileEditor *editor);
 
 class SyntaxEditWindow : public TEditWindow {
 public:
     SyntaxEditWindow(const TRect &bounds, TStringView fileName, int number);
+    const char *getTitle(short maxSize) override;
+
+private:
+    std::string titleBuffer_;
 };

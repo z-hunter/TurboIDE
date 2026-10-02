@@ -17,6 +17,7 @@
 #define Uses_TStatusDef
 #define Uses_TStatusItem
 #define Uses_TStatusLine
+#define Uses_TDrawBuffer
 #define Uses_TSubMenu
 #define Uses_TChDirDialog
 #define Uses_TKeys
@@ -31,6 +32,7 @@
 #include "build.h"
 #include "debugger.h"
 #include "desktop_session.h"
+#include "editor_features.h"
 #include "project.h"
 #include "run.h"
 #include "settings.h"
@@ -53,6 +55,8 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -106,6 +110,7 @@ constexpr ushort cmCommandPrompt = 130;
 constexpr ushort cmAddWatch = 131;
 constexpr ushort cmEvaluateWatches = 132;
 constexpr ushort cmShowLocals = 134;
+constexpr ushort cmGoToLine = 145;
 
 class TurboIDEApp;
 class BuildMessagesWindow;
@@ -113,6 +118,166 @@ class BuildProgressWindow;
 class ProjectFilesWindow;
 class DebugWatchesWindow;
 class DebugWatchWindow;
+
+class IDEStatusLine : public TStatusLine {
+public:
+    IDEStatusLine(const TRect &bounds, TStatusDef &defs) : TStatusLine(bounds, defs) {}
+
+    void setMenuActive(bool active) {
+        if (menuActive_ == active) return;
+        menuActive_ = active;
+        drawView();
+    }
+
+    void setPrefixMode(TFileEditor *editor, int mode) {
+        if (mode && prefixEditor_ != editor) prefixPage_ = 0;
+        prefixEditor_ = mode ? editor : nullptr;
+        prefixMode_ = mode;
+        drawView();
+    }
+
+    void advancePrefixPage(TFileEditor *editor) {
+        if (prefixEditor_ != editor || !prefixMode_) return;
+        const auto pages = makePages(commandsFor(prefixMode_), prefixFor(prefixMode_), availableHintWidth());
+        if (pages.size() > 1)
+            prefixPage_ = (prefixPage_ + 1) % static_cast<int>(pages.size());
+        drawView();
+    }
+
+    const char *hint(ushort context) override {
+        if (menuActive_ || (TProgram::application && TProgram::application->current != TProgram::deskTop))
+            return "";
+        const auto *window = TProgram::deskTop
+            ? dynamic_cast<TEditWindow *>(TProgram::deskTop->current) : nullptr;
+        if (!window || !editorSupportsPrefixKeys(window->editor))
+            return "";
+
+        if (prefixMode_ && prefixEditor_ == window->editor) {
+            const auto pages = makePages(commandsFor(prefixMode_), prefixFor(prefixMode_), availableHintWidth());
+            if (pages.empty()) return "";
+            prefixPage_ %= static_cast<int>(pages.size());
+            hintBuffer_ = pages[prefixPage_];
+            return hintBuffer_.c_str();
+        }
+        return "~^Q~ Quick  ~^K~ Block";
+    }
+
+    void draw() override {
+        if (menuActive_ || (TProgram::application && TProgram::application->current != TProgram::deskTop)) {
+            TStatusLine::draw();
+            return;
+        }
+        const auto *window = TProgram::deskTop
+            ? dynamic_cast<TEditWindow *>(TProgram::deskTop->current) : nullptr;
+        if (!window || !editorSupportsPrefixKeys(window->editor)) {
+            TStatusLine::draw();
+            return;
+        }
+        if (!prefixMode_ || prefixEditor_ != window->editor) {
+            TStatusLine::draw();
+            int column = 0;
+            for (auto *item = items; item; item = item->next)
+                if (item->text) column += cstrlen(item->text) + 2;
+            if (column < size.x - 2)
+                drawHint(hint(helpCtx), column + 2, size.x - column - 2);
+            return;
+        }
+        drawHint(hint(helpCtx), 0, size.x);
+    }
+
+private:
+    bool menuActive_ = false;
+
+    static int visibleHintLength(std::string_view text) {
+        int length = 0;
+        while (!text.empty()) {
+            if (text.front() != '~') ++length;
+            text.remove_prefix(1);
+        }
+        return length;
+    }
+
+    void drawHint(const char *text, int start, int width) {
+        TDrawBuffer buffer;
+        const TAttrPair normal = getColor(0x0301);
+        buffer.moveChar(0, ' ', normal, width);
+        buffer.moveCStr(0, text, normal, width);
+        writeLine(start, 0, width, 1, buffer);
+    }
+
+    int availableHintWidth() const {
+        if (prefixMode_) return size.x;
+        int used = 0;
+        for (auto *item = items; item; item = item->next)
+            if (item->text) used += cstrlen(item->text) + 2;
+        return std::max(0, size.x - used - 2);
+    }
+
+    static std::string_view prefixFor(int mode) {
+        return mode == 1 ? "~^Q~" : "~^K~";
+    }
+
+    static std::vector<std::string_view> commandsFor(int mode) {
+        if (mode == 1)
+            return {"~A~:Rep", "~C~:Text", "~D~:EOL", "~E~:PgUp", "~F~:Find",
+                    "~H~:DelB", "~L~:Len", "~M~:Macro", "~P~:Prev", "~R~:Top",
+                    "~S~:BOL", "~X~:PgDn", "~Y~:DelE", "~[ / ]~:Match",
+                    "~0-9~:Goto", "~Esc~:Exit"};
+        return {"~B~:Start", "~K~:End", "~C~:Copy", "~H~:Hide", "~I~:Ind",
+                "~L~:Line", "~M~:Upper", "~O~:Lower", "~R~:Read", "~T~:Word",
+                "~U~:Unind", "~V~:Move", "~W~:Write", "~Y~:Cut", "~0-9~:Mark",
+                "~Tab~:Ind", "~Sh+B/C/E/H/K/L/M/O/P/T/V~:Rect", "~Sh+A~:Toggle",
+                "~Ctrl+Ins~:Copy"};
+    }
+
+    static std::vector<std::string> makePages(const std::vector<std::string_view> &commands,
+                                               std::string_view prefix, int width) {
+        std::vector<std::string> pages;
+        size_t first = 0;
+        while (first < commands.size()) {
+            std::string page(prefix);
+            size_t end = first;
+            while (end < commands.size()) {
+                std::string candidate = page;
+                candidate += ' ';
+                candidate += commands[end];
+                const bool finalCommand = end + 1 == commands.size();
+                const int suffix = finalCommand ? 0 : 1 + visibleHintLength("~?~:More");
+                if (visibleHintLength(candidate) + suffix > width) break;
+                page = std::move(candidate);
+                ++end;
+            }
+            if (end == first) {
+                page += ' ';
+                page += commands[end++];
+            }
+            if (end < commands.size()) page += " ~?~:More";
+            pages.push_back(std::move(page));
+            first = end;
+        }
+        return pages;
+    }
+
+    int prefixMode_ = 0;
+    int prefixPage_ = 0;
+    TFileEditor *prefixEditor_ = nullptr;
+    std::string hintBuffer_;
+};
+
+class IDEMenuBar : public TMenuBar {
+public:
+    using TMenuBar::TMenuBar;
+
+    void handleEvent(TEvent &event) override {
+        const bool menuInput = event.what == evMouseDown ||
+            (event.what == evCommand && event.message.command == cmMenu) ||
+            (event.what == evKeyDown && (event.keyDown.controlKeyState & kbAltShift));
+        auto *status = dynamic_cast<IDEStatusLine *>(TProgram::statusLine);
+        if (menuInput && status) status->setMenuActive(true);
+        TMenuBar::handleEvent(event);
+        if (menuInput && status) status->setMenuActive(false);
+    }
+};
 
 short nextWindowNumber() {
     bool used[10]{};
@@ -363,6 +528,8 @@ private:
     void closeProject();
     void showProjectWindow();
     void showWindowList();
+    void syncEditMenuState();
+    void goToLine();
     void compileCurrent(bool runAfterBuild = false, bool debugAfterBuild = false);
     void buildProject(bool runAfterBuild = false, bool debugAfterBuild = false);
     void debugProject();
@@ -401,6 +568,7 @@ private:
     Project project_;
     ProjectFilesWindow *projectWindow_ = nullptr;
     bool hasProject_ = false;
+    bool editMenuCommandsDisabled_ = false;
     bool buildRunning_ = false;
     std::thread buildThread_;
     std::mutex buildMutex_;
@@ -896,6 +1064,7 @@ TurboIDEApp::TurboIDEApp()
     : TProgInit(&TurboIDEApp::initStatusLine,
                 &TurboIDEApp::initMenuBar,
                 &TurboIDEApp::initDeskTop) {
+    disableCommand(cmRedo);
     TEditor::editorDialog = editDialog;
     SetConsoleCtrlHandler(handleBuildControlEvent, TRUE);
     ideScreenBuffer_ = CreateFileW(L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
@@ -1746,6 +1915,71 @@ TEditWindow *TurboIDEApp::currentEditorWindow() const {
     return dynamic_cast<TEditWindow *>(deskTop->current);
 }
 
+void TurboIDEApp::syncEditMenuState() {
+    const auto *window = currentEditorWindow();
+    const bool hasEditor = window && window->editor;
+    if (editMenuCommandsDisabled_ == hasEditor) {
+        editMenuCommandsDisabled_ = !hasEditor;
+        const ushort editCommands[] = {
+            cmUndo, cmCut, cmCopy, cmPaste, cmPageDown, cmCharRight, cmLineUp,
+            cmWordRight, cmSearchAgain, cmPageUp, cmCharLeft, cmLineDown,
+            cmWordLeft, cmLineStart, cmLineEnd, cmTextStart, cmTextEnd,
+            cmDelChar, cmBackSpace, cmDelWord, cmDelWordLeft, cmDelLine,
+            cmDelStart, cmDelEnd, cmClear, cmNewLine, cmInsMode, cmIndentMode,
+            cmSelectAll, cmStartSelect
+        };
+        for (ushort command : editCommands) {
+            if (hasEditor) enableCommand(command);
+            else disableCommand(command);
+        }
+    }
+    const ushort featureCommands[] = {
+        cmExpandPmacro, cmMatchBracket, cmRecordMacro, cmStopMacro, cmPlayMacro,
+        cmMenuBlockStart,
+        cmChoosePmacro, cmMenuBlockEnd, cmMenuSelectLine, cmMenuSelectWord,
+        cmMenuIndentBlock, cmMenuUnindentBlock, cmMenuUpperCase, cmMenuLowerCase,
+        cmMenuReadBlock, cmMenuMoveBlock, cmMenuWriteBlock, cmMenuRectStart,
+        cmMenuRectEnd, cmMenuRectCopy, cmMenuRectDelete,
+        cmMenuRectClear, cmMenuRectHide, cmMenuRectMove, cmMenuRectPaste, cmMenuRectCut,
+        cmMenuRectToggleMovePaste, cmMenuRectDuplicate
+    };
+    const bool supportsSyntaxCommands = hasEditor && editorSupportsPrefixKeys(window->editor);
+    if (hasEditor) {
+        enableCommand(cmGoToLine);
+        enableCommand(cmMenuInsertTab);
+    } else {
+        disableCommand(cmGoToLine);
+        disableCommand(cmMenuInsertTab);
+    }
+    for (ushort command : featureCommands) {
+        if (supportsSyntaxCommands) enableCommand(command);
+        else disableCommand(command);
+    }
+}
+
+void TurboIDEApp::goToLine() {
+    auto *window = currentEditorWindow();
+    if (!window || !window->editor) {
+        messageBox("Open a source file first.", mfInformation | mfOKButton);
+        return;
+    }
+    char input[16] = {};
+    if (execDialog(createSingleInputDialog("Go to line", "~L~ine number", 10), input) != cmOK)
+        return;
+    char *end = nullptr;
+    const long requested = std::strtol(input, &end, 10);
+    if (end == input || *end || requested < 1) {
+        messageBox("Enter a positive line number.", mfError | mfOKButton);
+        return;
+    }
+    TFileEditor *editor = window->editor;
+    uint position = 0;
+    for (long line = 1; line < requested && position < editor->bufLen; ++line)
+        position = editor->nextLine(position);
+    editor->setCurPtr(editor->lineStart(position), 0);
+    editor->trackCursor(True);
+}
+
 std::vector<DebugBreakpoint> TurboIDEApp::allBreakpoints() const {
     std::vector<DebugBreakpoint> result;
     for (const auto &entry : breakpoints_)
@@ -2092,6 +2326,7 @@ void TurboIDEApp::restoreEditorAfterRun() {
 
 void TurboIDEApp::idle() {
     TApplication::idle();
+    syncEditMenuState();
     if (!startupProject_.empty()) {
         const auto project = std::move(startupProject_);
         activateProject(project);
@@ -2244,6 +2479,35 @@ bool TurboIDEApp::goToLocation(const std::filesystem::path &file, int line, int 
 }
 
 void TurboIDEApp::handleEvent(TEvent &event) {
+    syncEditMenuState();
+    if (event.what == evKeyDown && (!TProgram::application ||
+        TProgram::application->current == TProgram::deskTop)) {
+        if (event.keyDown.keyCode == kbCtrlJ) {
+            if (currentEditorWindow()) {
+                clearEvent(event);
+                goToLine();
+                return;
+            }
+        } else if (event.keyDown.keyCode == kbCtrlP) {
+            if (auto *window = currentEditorWindow(); window &&
+                editorSupportsPrefixKeys(window->editor)) {
+                runEditorFeature(window->editor, cmExpandPmacro);
+                clearEvent(event);
+                return;
+            }
+        }
+    }
+    if (event.what == evKeyDown && TKey(event.keyDown) == kbAltBack &&
+        (!TProgram::application || TProgram::application->current == TProgram::deskTop)) {
+        if (auto *window = currentEditorWindow(); window && window->editor) {
+            TEvent undo{};
+            undo.what = evCommand;
+            undo.message.command = cmUndo;
+            window->editor->handleEvent(undo);
+            clearEvent(event);
+            return;
+        }
+    }
     if (event.what == evKeyDown && projectWindow_ && deskTop->current == projectWindow_ &&
         projectWindow_->handleListKey(event))
         return;
@@ -2340,6 +2604,53 @@ void TurboIDEApp::handleEvent(TEvent &event) {
     case cmEnvironment:
         editEnvironment();
         break;
+    case cmExpandPmacro:
+    case cmChoosePmacro:
+    case cmMatchBracket:
+    case cmRecordMacro:
+    case cmStopMacro:
+    case cmPlayMacro:
+    case cmMenuBlockEnd:
+    case cmMenuBlockStart:
+    case cmMenuSelectLine:
+    case cmMenuSelectWord:
+    case cmMenuIndentBlock:
+    case cmMenuUnindentBlock:
+    case cmMenuUpperCase:
+    case cmMenuLowerCase:
+    case cmMenuReadBlock:
+    case cmMenuMoveBlock:
+    case cmMenuWriteBlock:
+    case cmMenuRectStart:
+    case cmMenuRectEnd:
+    case cmMenuRectCopy:
+    case cmMenuRectDelete:
+    case cmMenuRectClear:
+    case cmMenuRectHide:
+    case cmMenuRectMove:
+    case cmMenuRectPaste:
+    case cmMenuRectCut:
+    case cmMenuRectToggleMovePaste:
+    case cmMenuRectDuplicate: {
+        TEditWindow *window = currentEditorWindow();
+        if (!window || !runEditorFeature(window->editor, event.message.command))
+            messageBox("This editor command is available for C and C++ files.",
+                       mfInformation | mfOKButton);
+        break;
+    }
+    case cmMenuInsertTab: {
+        if (auto *window = currentEditorWindow(); window && window->editor) {
+            TEvent tab{};
+            tab.what = evKeyDown;
+            tab.keyDown.keyCode = kbTab;
+            tab.keyDown.charScan.charCode = '\t';
+            window->editor->handleEvent(tab);
+        }
+        break;
+    }
+    case cmGoToLine:
+        goToLine();
+        break;
     case cmShowMessages:
     case cmCompilerMessages:
         showMessages();
@@ -2367,7 +2678,7 @@ void TurboIDEApp::handleEvent(TEvent &event) {
 
 TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
     r.b.y = r.a.y + 1;
-    return new TMenuBar(r,
+    return new IDEMenuBar(r,
         *new TSubMenu("~F~ile", kbAltF) +
             *new TMenuItem("~N~ew", cmNew, kbCtrlN, hcNoContext, "Ctrl-N") +
             *new TMenuItem("~O~pen...", cmOpen, kbF3, hcNoContext, "F3") +
@@ -2376,11 +2687,76 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
             *new TMenuItem("~C~hange dir...", cmChangeDirectory, kbNoKey) + newLine() +
             *new TMenuItem("E~x~it", cmQuit, kbAltX, hcNoContext, "Alt-X") +
         *new TSubMenu("~E~dit", kbAltE) +
-            *new TMenuItem("~U~ndo", cmUndo, kbCtrlU, hcNoContext, "Ctrl-U") + newLine() +
+            *new TMenuItem("~U~ndo", cmUndo, kbAltBack, hcNoContext, "Alt-Backspace / Ctrl-U") +
+            *new TMenuItem("~R~edo", cmRedo,
+                TKey(kbBack, kbAltShift | kbShift), hcNoContext, "Alt+Shift+Backspace") + newLine() +
             *new TMenuItem("Cu~t~", cmCut, kbShiftDel, hcNoContext, "Shift-Del") +
             *new TMenuItem("~C~opy", cmCopy, kbCtrlIns, hcNoContext, "Ctrl-Ins") +
             *new TMenuItem("~P~aste", cmPaste, kbShiftIns, hcNoContext, "Shift-Ins") + newLine() +
-            *new TMenuItem("C~l~ear", cmClear, kbCtrlDel, hcNoContext, "Ctrl-Del") +
+            *new TMenuItem("~N~avigation", kbNoKey,
+                new TMenu(*new TMenuItem("Page down", cmPageDown, kbNoKey, hcNoContext, "Ctrl-C") +
+                          *new TMenuItem("Character right", cmCharRight, kbNoKey, hcNoContext, "Ctrl-D") +
+                          *new TMenuItem("Line up", cmLineUp, kbNoKey, hcNoContext, "Ctrl-E") +
+                          *new TMenuItem("Word right", cmWordRight, kbNoKey, hcNoContext, "Ctrl-F") +
+                          *new TMenuItem("Search again", cmSearchAgain, kbNoKey, hcNoContext, "Ctrl-L") +
+                          *new TMenuItem("Page up", cmPageUp, kbNoKey, hcNoContext, "Ctrl-R") +
+                          *new TMenuItem("Character left", cmCharLeft, kbNoKey, hcNoContext, "Ctrl-S") +
+                          *new TMenuItem("Line down", cmLineDown, kbNoKey, hcNoContext, "Ctrl-X") + newLine() +
+                          *new TMenuItem("Word left", cmWordLeft, kbNoKey, hcNoContext, "Ctrl-Left") +
+                          *new TMenuItem("Line start", cmLineStart, kbNoKey, hcNoContext, "Home") +
+                          *new TMenuItem("Line end", cmLineEnd, kbNoKey, hcNoContext, "End") +
+                          *new TMenuItem("File start", cmTextStart, kbNoKey, hcNoContext, "Ctrl-Home") +
+                          *new TMenuItem("File end", cmTextEnd, kbNoKey, hcNoContext, "Ctrl-End") + newLine() +
+                          *new TMenuItem("Go to line...", cmGoToLine, kbNoKey, hcNoContext, "Ctrl-J") +
+                          *new TMenuItem("Match bracket", cmMatchBracket, kbNoKey, hcNoContext,
+                                         "Alt+[ / Alt+]"))) +
+            *new TMenuItem("~D~elete", kbNoKey,
+                new TMenu(*new TMenuItem("Character", cmDelChar, kbNoKey, hcNoContext, "Ctrl-G") +
+                          *new TMenuItem("Previous character", cmBackSpace, kbNoKey, hcNoContext, "Ctrl-H") +
+                          *new TMenuItem("Word", cmDelWord, kbNoKey, hcNoContext, "Ctrl-T") +
+                          *new TMenuItem("Previous word", cmDelWordLeft, kbNoKey, hcNoContext, "Ctrl-Backspace") +
+                          *new TMenuItem("Line", cmDelLine, kbNoKey, hcNoContext, "Ctrl-Y") +
+                          *new TMenuItem("To line start", cmDelStart, kbNoKey, hcNoContext,
+                                         "Ctrl+Shift+Backspace") +
+                          *new TMenuItem("To line end", cmDelEnd, kbNoKey, hcNoContext, "Ctrl+Shift+Y") +
+                          *new TMenuItem("Selection", cmClear, kbNoKey, hcNoContext, "Ctrl-Del"))) +
+            *new TMenuItem("~I~nsert", kbNoKey,
+                new TMenu(*new TMenuItem("Tab", cmMenuInsertTab, kbNoKey, hcNoContext, "Ctrl-I") +
+                          *new TMenuItem("New line", cmNewLine, kbNoKey, hcNoContext, "Ctrl-M") +
+                          *new TMenuItem("Toggle insert/overwrite", cmInsMode, kbNoKey, hcNoContext, "Ctrl-V") +
+                          *new TMenuItem("Toggle auto indent", cmIndentMode, kbNoKey, hcNoContext, "Ctrl-O") + newLine() +
+                          *new TMenuItem("Expand snippet", cmExpandPmacro, kbNoKey, hcNoContext, "Ctrl-P") +
+                          *new TMenuItem("Choose snippet...", cmChoosePmacro, kbNoKey))) +
+            *new TMenuItem("Se~l~ection", kbNoKey,
+                new TMenu(*new TMenuItem("Select all", cmSelectAll, kbNoKey, hcNoContext, "Ctrl-A") + newLine() +
+                          *new TMenuItem("Start block", cmMenuBlockStart, kbNoKey, hcNoContext, "Ctrl+Shift+B") +
+                          *new TMenuItem("End block", cmMenuBlockEnd, kbNoKey, hcNoContext, "Ctrl+Shift+K") +
+                          *new TMenuItem("Copy block", cmCopy, kbNoKey, hcNoContext, "Ctrl+Shift+C") +
+                          *new TMenuItem("Hide block", cmHideSelect, kbNoKey, hcNoContext, "Ctrl+Shift+H") +
+                          *new TMenuItem("Cut block", cmCut, kbNoKey, hcNoContext, "Ctrl+Shift+X") +
+                          *new TMenuItem("Select line", cmMenuSelectLine, kbNoKey, hcNoContext, "Ctrl+Shift+L") +
+                          *new TMenuItem("Select word", cmMenuSelectWord, kbNoKey, hcNoContext, "Ctrl+Shift+T") + newLine() +
+                          *new TMenuItem("Indent block", cmMenuIndentBlock, kbNoKey, hcNoContext, "Ctrl+Shift+I") +
+                          *new TMenuItem("Unindent block", cmMenuUnindentBlock, kbNoKey, hcNoContext, "Ctrl+Shift+U") +
+                          *new TMenuItem("Uppercase selection", cmMenuUpperCase, kbNoKey, hcNoContext, "Ctrl+Shift+M") +
+                          *new TMenuItem("Lowercase selection", cmMenuLowerCase, kbNoKey, hcNoContext, "Ctrl+Shift+O") +
+                          *new TMenuItem("Move block", cmMenuMoveBlock, kbNoKey, hcNoContext, "Ctrl+Shift+V") +
+                          *new TMenuItem("Read block...", cmMenuReadBlock, kbNoKey, hcNoContext, "Ctrl+Shift+R") +
+                          *new TMenuItem("Write block...", cmMenuWriteBlock, kbNoKey, hcNoContext, "Ctrl+Shift+W") + newLine() +
+                          *new TMenuItem("Start rectangle", cmMenuRectStart, kbNoKey, hcNoContext, "Ctrl+Alt+B") +
+                          *new TMenuItem("End rectangle", cmMenuRectEnd, kbNoKey, hcNoContext, "Ctrl+Alt+K") +
+                          *new TMenuItem("Copy rectangle", cmMenuRectCopy, kbNoKey, hcNoContext, "Ctrl+Alt+C") +
+                          *new TMenuItem("Cut rectangle", cmMenuRectCut, kbNoKey, hcNoContext, "Ctrl+Alt+T") +
+                          *new TMenuItem("Delete rectangle", cmMenuRectDelete, kbNoKey, hcNoContext, "Ctrl+Alt+L") +
+                          *new TMenuItem("Clear rectangle", cmMenuRectClear, kbNoKey, hcNoContext, "Ctrl+Alt+E") +
+                          *new TMenuItem("Hide rectangle", cmMenuRectHide, kbNoKey, hcNoContext, "Ctrl+Alt+H") +
+                          *new TMenuItem("Move rectangle", cmMenuRectMove, kbNoKey, hcNoContext, "Ctrl+Alt+M") +
+                          *new TMenuItem("Paste rectangle", cmMenuRectPaste, kbNoKey, hcNoContext, "Ctrl+Alt+P") +
+                          *new TMenuItem("Duplicate rectangle", cmMenuRectDuplicate, kbNoKey, hcNoContext, "Ctrl+Alt+O") +
+                          *new TMenuItem("Toggle move on paste", cmMenuRectToggleMovePaste, kbNoKey, hcNoContext, "Ctrl+Alt+A"))) + newLine() +
+            *new TMenuItem("~R~ecord macro", cmRecordMacro, kbShiftF10, hcNoContext, "Shift-F10") +
+            *new TMenuItem("~S~top recording", cmStopMacro, kbAltF10, hcNoContext, "Alt-F10") +
+            *new TMenuItem("~P~lay macro", cmPlayMacro, kbCtrlF10, hcNoContext, "Ctrl-F10") +
         *new TSubMenu("~S~earch", kbAltS) +
             *new TMenuItem("~F~ind...", cmFind, kbNoKey) +
             *new TMenuItem("~R~eplace...", cmReplace, kbNoKey) +
@@ -2437,7 +2813,7 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
 
 TStatusLine *TurboIDEApp::initStatusLine(TRect r) {
     r.a.y = r.b.y - 1;
-    return new TStatusLine(r,
+    return new IDEStatusLine(r,
         *new TStatusDef(0, 0xFFFF) +
             *new TStatusItem("~F1~ Help", kbF1, cmNotReady) +
             *new TStatusItem("~F7~ Trace", kbF7, cmDebugStepInto) +
@@ -2457,6 +2833,16 @@ void TurboIDEApp::showAbout() {
                "Компилятор: GCC; отладчик: GDB/MI.",
                mfInformation | mfOKButton);
 }
+}
+
+void setEditorPrefixHint(TFileEditor *editor, int mode) {
+    if (auto *status = dynamic_cast<IDEStatusLine *>(TProgram::statusLine))
+        status->setPrefixMode(editor, mode);
+}
+
+void advanceEditorPrefixHintPage(TFileEditor *editor) {
+    if (auto *status = dynamic_cast<IDEStatusLine *>(TProgram::statusLine))
+        status->advancePrefixPage(editor);
 }
 
 int main() {

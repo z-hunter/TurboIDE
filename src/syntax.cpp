@@ -1,14 +1,26 @@
 #define Uses_TDrawBuffer
 #define Uses_TEvent
 #define Uses_TObject
+#define Uses_TFrame
+#define Uses_TWindow
+#define Uses_TDeskTop
+#define Uses_TKeys
+#define Uses_MsgBox
+#define Uses_TFileDialog
 #include "syntax.h"
+#include "editor_features.h"
 
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <limits>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 IDETheme::IDETheme()
@@ -77,9 +89,66 @@ public:
         : TFileEditor(bounds, horizontal, vertical, indicator, fileName) {}
 
     void handleEvent(TEvent &event) override {
-        if (mayChangeText(event))
-            tokensValid_ = false;
-        TFileEditor::handleEvent(event);
+        if (event.what == evKeyDown) {
+            if (prefixMode_) {
+                const int mode = prefixMode_;
+                if (event.keyDown.textLength == 1 && event.keyDown.text[0] == '?') {
+                    advanceEditorPrefixHintPage(this);
+                    clearEvent(event);
+                    return;
+                }
+                prefixMode_ = 0;
+                setEditorPrefixHint(this, 0);
+                if (event.keyDown.keyCode != kbEsc)
+                    executePrefix(mode, event);
+                clearEvent(event);
+                updateMatchingBracket();
+                return;
+            }
+            if (event.keyDown.keyCode == kbCtrlQ || event.keyDown.keyCode == kbCtrlK) {
+                prefixMode_ = event.keyDown.keyCode == kbCtrlQ ? 1 : 2;
+                setEditorPrefixHint(this, prefixMode_);
+                clearEvent(event);
+                return;
+            }
+        }
+        const bool enter = isEnter(event);
+        const bool closeBrace = isCloseBrace(event);
+        const bool capture = recordable(event);
+        const TEvent recorded = event;
+        const uint oldCursor = curPtr;
+        const bool snippetUndo = isUndo(event) && canUndoSnippet();
+        if (snippetUndo) {
+            undoSnippet();
+            clearEvent(event);
+        } else {
+            if (snippetUndo_.valid && mayChangeText(event))
+                snippetUndo_.valid = false;
+            const bool handledDirect = handleDirectShortcut(event);
+            const bool insertedDedentedBrace = !handledDirect && closeBrace && insertDedentedCloseBrace();
+            if (mayChangeText(event) || handledDirect)
+                tokensValid_ = false;
+            if (handledDirect)
+                clearEvent(event);
+            if (insertedDedentedBrace)
+                clearEvent(event);
+            else if (!handledDirect)
+                TFileEditor::handleEvent(event);
+        }
+        if (enter && !snippetUndo)
+            indentAfterOpenBrace();
+        if (capture && recording_ && !replaying_) {
+            if (macroEvents_.size() < maxMacroEvents)
+                macroEvents_.push_back(recorded);
+            else {
+                recording_ = false;
+                refreshWindowTitle();
+                messageBox("Macro recording stopped at the event limit.", mfError | mfOKButton);
+            }
+        }
+        updateMatchingBracket();
+        if (curPtr != oldCursor)
+            lastCursor_ = oldCursor;
     }
 
     void formatLine(TDrawBuffer &drawBuffer, uint linePtr, int hScroll, int width,
@@ -91,6 +160,12 @@ public:
         uint p = linePtr;
         int cellPos = 0;
         int x = 0;
+        const uint triggerStart = pmacroTriggerStart(this);
+        const int currentLine = lineNumber(linePtr);
+        const int rectTop = std::min(rectTop_, rectBottom_);
+        const int rectBottom = std::max(rectTop_, rectBottom_);
+        const int rectLeft = std::min(rectLeft_, rectRight_);
+        const int rectRight = std::max(rectLeft_, rectRight_);
         hScroll = std::max(hScroll, 0);
         width = std::max(width, 0);
         while (p < bufLen) {
@@ -107,7 +182,12 @@ public:
                 const int charWidth = nextPos - std::max(cellPos, hScroll);
                 const unsigned char token = p < tokens_.size() ? tokens_[p] : tokenNormal;
                 const bool selected = selStart <= p && p < selEnd;
-                if (!selected && (token != tokenNormal || linePtr == diagnosticLineStart_ ||
+                const bool rectSelected = rectangleValid_ && !rectangleHidden_ &&
+                    currentLine >= rectTop && currentLine <= rectBottom &&
+                    cellPos >= rectLeft && cellPos < rectRight;
+                if (rectSelected)
+                    drawBuffer.putAttribute(static_cast<ushort>(x), 0x70);
+                else if (!selected && (token != tokenNormal || linePtr == diagnosticLineStart_ ||
                                   linePtr == executionLineStart_ || breakpointLine)) {
                     TColorAttr attr = colorFor(token);
                     if (linePtr == diagnosticLineStart_)
@@ -121,6 +201,11 @@ public:
                     for (int col = 0; col < charWidth && x + col < width; ++col)
                         drawBuffer.putAttribute(static_cast<ushort>(x + col), attr);
                 }
+                if (p == matchingOpen_ || p == matchingClose_)
+                    drawBuffer.putAttribute(static_cast<ushort>(x), ideTheme().matchingBracket);
+                if (!selected && triggerStart != invalidPosition &&
+                    p >= triggerStart && p < triggerStart + 2)
+                    drawBuffer.putAttribute(static_cast<ushort>(x), 0x1F);
                 x += charWidth;
             }
             p = nextP;
@@ -141,7 +226,745 @@ public:
         drawView();
     }
 
+    bool runFeature(ushort command) {
+        switch (command) {
+        case cmExpandPmacro:
+        case cmChoosePmacro: {
+            const std::string before = bufferText();
+            const uint caretBefore = curPtr;
+            expandPmacro(this, command == cmChoosePmacro);
+            saveSnippetUndo(before, caretBefore);
+            tokensValid_ = false;
+            updateMatchingBracket();
+            drawView();
+            return true;
+        }
+        case cmMatchBracket:
+            if (matchingTarget_ != invalidPosition) {
+                setCurPtr(matchingTarget_, 0);
+                trackCursor(True);
+                updateMatchingBracket();
+                drawView();
+            }
+            return true;
+        case cmMenuBlockStart: beginBlock(); return true;
+        case cmMenuBlockEnd: endBlock(); return true;
+        case cmMenuSelectLine: selectLine(); return true;
+        case cmMenuSelectWord: selectWord(); return true;
+        case cmMenuIndentBlock: indentSelection(1); return true;
+        case cmMenuUnindentBlock: indentSelection(-1); return true;
+        case cmMenuUpperCase: changeSelectionCase(true); return true;
+        case cmMenuLowerCase: changeSelectionCase(false); return true;
+        case cmMenuReadBlock: readBlock(); return true;
+        case cmMenuMoveBlock: moveBlock(); return true;
+        case cmMenuWriteBlock: writeBlock(); return true;
+        case cmMenuRectStart: setRectangleStart(); return true;
+        case cmMenuRectEnd: setRectangleEnd(); return true;
+        case cmMenuRectCopy: copyRectangle(true); return true;
+        case cmMenuRectDelete: editRectangle(0); return true;
+        case cmMenuRectClear: editRectangle(1); return true;
+        case cmMenuRectHide: rectangleHidden_ = !rectangleHidden_; drawView(); return true;
+        case cmMenuRectMove: moveRectangle(); return true;
+        case cmMenuRectPaste: if (moveOnPaste_) moveRectangle(); else pasteRectangle(); return true;
+        case cmMenuRectCut: copyRectangle(true); editRectangle(0); return true;
+        case cmMenuRectToggleMovePaste: moveOnPaste_ = !moveOnPaste_; return true;
+        case cmMenuRectDuplicate: copyRectangle(false); pasteRectangle(); return true;
+        case cmRecordMacro:
+            macroEvents_.clear();
+            recording_ = true;
+            refreshWindowTitle();
+            return true;
+        case cmStopMacro:
+            recording_ = false;
+            refreshWindowTitle();
+            return true;
+        case cmPlayMacro:
+            if (recording_) {
+                messageBox("Stop recording before playing the macro.", mfInformation | mfOKButton);
+                return true;
+            }
+            replaying_ = true;
+            for (auto event : macroEvents_)
+                handleEvent(event);
+            replaying_ = false;
+            tokensValid_ = false;
+            updateMatchingBracket();
+            drawView();
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    bool recording() const { return recording_; }
+
 private:
+    static char prefixCharacter(const TEvent &event) {
+        if (event.keyDown.keyCode == kbEsc)
+            return 27;
+        if (event.keyDown.textLength == 1)
+            return static_cast<char>(std::toupper(static_cast<unsigned char>(event.keyDown.text[0])));
+        const ushort key = event.keyDown.keyCode;
+        if (key >= 1 && key <= 26)
+            return static_cast<char>('A' + key - 1);
+        return static_cast<char>(std::toupper(static_cast<unsigned char>(key & 0xFF)));
+    }
+
+    void dispatchEditorCommand(ushort command) {
+        const uint oldCursor = curPtr;
+        TEvent commandEvent{};
+        commandEvent.what = evCommand;
+        commandEvent.message.command = command;
+        TFileEditor::handleEvent(commandEvent);
+        if (curPtr != oldCursor)
+            lastCursor_ = oldCursor;
+    }
+
+    bool handleDirectShortcut(const TEvent &event) {
+        if (event.what != evKeyDown) return false;
+        const TKey key(event.keyDown);
+        constexpr ushort ctrlShift = kbCtrlShift | kbShift;
+        constexpr ushort ctrlAlt = kbCtrlShift | kbAltShift;
+        const auto matches = [&](ushort character, ushort modifiers) {
+            return key == TKey(character, modifiers);
+        };
+
+        if (matches('[', kbAltShift) || matches(']', kbAltShift)) {
+            runFeature(cmMatchBracket);
+            return true;
+        }
+        if (event.keyDown.controlKeyState & kbCtrlShift) {
+            int digit = -1;
+            const uchar scan = event.keyDown.charScan.scanCode;
+            if (scan == 0x0B) digit = 0;
+            else if (scan >= 0x02 && scan <= 0x0A) digit = scan - 0x01;
+            if (digit >= 0 && !(event.keyDown.controlKeyState & kbAltShift)) {
+                if (event.keyDown.controlKeyState & kbShift) {
+                    marks_[digit] = curPtr;
+                    markSet_[digit] = true;
+                } else if (markSet_[digit]) {
+                    setCurPtr(std::min(marks_[digit], bufLen), 0);
+                }
+                return true;
+            }
+        }
+
+        ushort command = 0;
+        if (matches('Y', ctrlShift)) command = cmDelEnd;
+        else if (matches(kbBack, ctrlShift)) command = cmDelStart;
+        else if (matches('B', ctrlShift)) command = cmMenuBlockStart;
+        else if (matches('K', ctrlShift)) command = cmMenuBlockEnd;
+        else if (matches('C', ctrlShift)) command = cmCopy;
+        else if (matches('H', ctrlShift)) command = cmHideSelect;
+        else if (matches('X', ctrlShift)) command = cmCut;
+        else if (matches('L', ctrlShift)) command = cmMenuSelectLine;
+        else if (matches('T', ctrlShift)) command = cmMenuSelectWord;
+        else if (matches('I', ctrlShift)) command = cmMenuIndentBlock;
+        else if (matches('U', ctrlShift)) command = cmMenuUnindentBlock;
+        else if (matches('M', ctrlShift)) command = cmMenuUpperCase;
+        else if (matches('O', ctrlShift)) command = cmMenuLowerCase;
+        else if (matches('V', ctrlShift)) command = cmMenuMoveBlock;
+        else if (matches('R', ctrlShift)) command = cmMenuReadBlock;
+        else if (matches('W', ctrlShift)) command = cmMenuWriteBlock;
+        else if (matches('I', kbCtrlShift)) {
+            TEvent tab{};
+            tab.what = evKeyDown;
+            tab.keyDown.keyCode = kbTab;
+            tab.keyDown.charScan.charCode = '\t';
+            TFileEditor::handleEvent(tab);
+            return true;
+        }
+        else if (matches('B', ctrlAlt)) command = cmMenuRectStart;
+        else if (matches('K', ctrlAlt)) command = cmMenuRectEnd;
+        else if (matches('C', ctrlAlt)) command = cmMenuRectCopy;
+        else if (matches('T', ctrlAlt)) command = cmMenuRectCut;
+        else if (matches('L', ctrlAlt)) command = cmMenuRectDelete;
+        else if (matches('E', ctrlAlt)) command = cmMenuRectClear;
+        else if (matches('H', ctrlAlt)) command = cmMenuRectHide;
+        else if (matches('M', ctrlAlt)) command = cmMenuRectMove;
+        else if (matches('P', ctrlAlt)) command = cmMenuRectPaste;
+        else if (matches('O', ctrlAlt)) command = cmMenuRectDuplicate;
+        else if (matches('A', ctrlAlt)) command = cmMenuRectToggleMovePaste;
+        else return false;
+
+        switch (command) {
+        case cmDelEnd: case cmDelStart: case cmCopy: case cmHideSelect: case cmCut:
+            dispatchEditorCommand(command);
+            break;
+        default:
+            runFeature(command);
+            break;
+        }
+        return true;
+    }
+
+    void executePrefix(int mode, const TEvent &event) {
+        const char key = prefixCharacter(event);
+        const bool shifted = (event.keyDown.controlKeyState & kbShift) != 0;
+        if (mode == 1) {
+            switch (key) {
+            case 'A': dispatchEditorCommand(cmReplace); return;
+            case 'B': if (hasSelection()) setCurPtr(selStart, 0); return;
+            case 'C': dispatchEditorCommand(cmTextEnd); return;
+            case 'D': dispatchEditorCommand(cmLineEnd); return;
+            case 'E': setCurPtr(lineMove(curPtr, -curPos.y), 0); return;
+            case 'F': dispatchEditorCommand(cmFind); return;
+            case 'H': dispatchEditorCommand(cmDelStart); return;
+            case 'K': if (hasSelection()) setCurPtr(selEnd, 0); return;
+            case 'L': {
+                char text[80];
+                std::snprintf(text, sizeof(text), "Selection length: %u",
+                              hasSelection() ? selEnd - selStart : 0);
+                messageBox(text, mfInformation | mfOKButton);
+                return;
+            }
+            case 'M': runFeature(cmPlayMacro); return;
+            case 'P': {
+                const uint previous = curPtr;
+                setCurPtr(std::min(lastCursor_, bufLen), 0);
+                lastCursor_ = previous;
+                return;
+            }
+            case 'R': dispatchEditorCommand(cmTextStart); return;
+            case 'S': dispatchEditorCommand(cmLineStart); return;
+            case 'X': setCurPtr(lineMove(curPtr, size.y - 1 - curPos.y), 0); return;
+            case 'Y': dispatchEditorCommand(cmDelEnd); return;
+            case '[': case ']': runFeature(cmMatchBracket); return;
+            default:
+                if (key >= '0' && key <= '9' && markSet_[key - '0'])
+                    setCurPtr(std::min(marks_[key - '0'], bufLen), 0);
+                return;
+            }
+        }
+
+        if (mode == 2 && event.keyDown.keyCode == kbCtrlIns) {
+            copyRectangle(true);
+            return;
+        }
+
+        if (event.keyDown.keyCode == kbTab || event.keyDown.keyCode == kbShiftTab ||
+            key == '\t') {
+            indentSelection(shifted || event.keyDown.keyCode == kbShiftTab ? -1 : 1);
+            return;
+        }
+        if (shifted) {
+            switch (key) {
+            case 'B': setRectangleStart(); return;
+            case 'K': setRectangleEnd(); return;
+            case 'C': copyRectangle(true); return;
+            case 'E': editRectangle(1); return;
+            case 'H': rectangleHidden_ = !rectangleHidden_; drawView(); return;
+            case 'L': editRectangle(0); return;
+            case 'M': case 'V': moveRectangle(); return;
+            case 'O': copyRectangle(false); pasteRectangle(); return;
+            case 'P': if (moveOnPaste_) moveRectangle(); else pasteRectangle(); return;
+            case 'T': copyRectangle(true); editRectangle(0); return;
+            case 'A': moveOnPaste_ = !moveOnPaste_; return;
+            default: return;
+            }
+        }
+        switch (key) {
+        case 'B': beginBlock(); return;
+        case 'C': if (hasSelection()) clipCopy(); return;
+        case 'H': dispatchEditorCommand(cmHideSelect); return;
+        case 'I': indentSelection(1); return;
+        case 'K': endBlock(); return;
+        case 'L': selectLine(); return;
+        case 'M': changeSelectionCase(true); return;
+        case 'O': changeSelectionCase(false); return;
+        case 'R': readBlock(); return;
+        case 'T': selectWord(); return;
+        case 'U': indentSelection(-1); return;
+        case 'V': moveBlock(); return;
+        case 'W': writeBlock(); return;
+        case 'Y': if (hasSelection()) clipCut(); return;
+        default:
+            if (key >= '0' && key <= '9') {
+                marks_[key - '0'] = curPtr;
+                markSet_[key - '0'] = true;
+            }
+            return;
+        }
+    }
+
+    void beginBlock() {
+        blockStart_ = curPtr;
+        blockSelecting_ = true;
+        setSelect(curPtr, curPtr, False);
+    }
+
+    void endBlock() {
+        if (!blockSelecting_)
+            return;
+        setSelect(std::min(blockStart_, curPtr), std::max(blockStart_, curPtr),
+                  Boolean(curPtr < blockStart_));
+        blockSelecting_ = false;
+    }
+
+    void selectLine() {
+        const uint start = lineStart(curPtr);
+        setSelect(start, lineEnd(curPtr), Boolean(curPtr == start));
+    }
+
+    void selectWord() {
+        uint start = curPtr;
+        uint end = curPtr;
+        if (start > 0 && start == end)
+            start = prevWord(start);
+        end = nextWord(end);
+        setSelect(start, end, False);
+    }
+
+    void indentSelection(int direction) {
+        if (!hasSelection())
+            return;
+        const uint start = lineStart(selStart);
+        const uint end = selEnd;
+        std::string changed;
+        const int width = std::max(1, TEditor::tabSize);
+        const std::string indent(static_cast<size_t>(width), ' ');
+        bool lineBeginning = true;
+        for (uint p = start; p < end;) {
+            if (lineBeginning && direction > 0)
+                changed += indent;
+            if (lineBeginning && direction < 0) {
+                int removed = 0;
+                while (p < end && removed < width && bufChar(p) == ' ') {
+                    p = nextChar(p);
+                    ++removed;
+                }
+            }
+            if (p >= end) break;
+            const char c = bufChar(p);
+            changed.push_back(c);
+            lineBeginning = c == '\n' || c == '\r';
+            p = nextChar(p);
+            if (c == '\r' && p < end && bufChar(p) == '\n') {
+                changed.push_back('\n');
+                p = nextChar(p);
+            }
+        }
+        setSelect(start, end, False);
+        insertText(changed.data(), static_cast<uint>(changed.size()), False);
+    }
+
+    void changeSelectionCase(bool upper) {
+        if (!hasSelection()) return;
+        std::string text;
+        for (uint p = selStart; p < selEnd; p = nextChar(p)) {
+            const unsigned char c = static_cast<unsigned char>(bufChar(p));
+            text.push_back(static_cast<char>(upper ? std::toupper(c) : std::tolower(c)));
+        }
+        setSelect(selStart, selEnd, False);
+        insertText(text.data(), static_cast<uint>(text.size()), False);
+    }
+
+    void moveBlock() {
+        if (!hasSelection() || (curPtr >= selStart && curPtr <= selEnd)) return;
+        std::string text;
+        for (uint p = selStart; p < selEnd; p = nextChar(p))
+            text.push_back(bufChar(p));
+        const uint destination = curPtr > selEnd ? curPtr - (selEnd - selStart) : curPtr;
+        deleteSelect();
+        setCurPtr(destination, 0);
+        insertText(text.data(), static_cast<uint>(text.size()), False);
+    }
+
+    void readBlock() {
+        char path[512]{};
+        TView *dialog = TProgram::application->validView(
+            new TFileDialog("*.*", "Read block", "~N~ame", fdOpenButton, 120));
+        if (!dialog) return;
+        if (TProgram::deskTop->execView(dialog) == cmOK) {
+            dialog->getData(path);
+            std::ifstream file(std::filesystem::u8path(path), std::ios::binary);
+            const std::string text((std::istreambuf_iterator<char>(file)), {});
+            if (file || file.eof()) insertText(text.data(), static_cast<uint>(text.size()), False);
+        }
+        TObject::destroy(dialog);
+    }
+
+    void writeBlock() {
+        if (!hasSelection()) return;
+        char path[512]{};
+        TView *dialog = TProgram::application->validView(
+            new TFileDialog("*.*", "Write block", "~N~ame", fdOKButton, 121));
+        if (!dialog) return;
+        if (TProgram::deskTop->execView(dialog) == cmOK) {
+            dialog->getData(path);
+            std::ofstream file(std::filesystem::u8path(path), std::ios::binary);
+            for (uint p = selStart; file && p < selEnd; p = nextChar(p))
+                file.put(bufChar(p));
+        }
+        TObject::destroy(dialog);
+    }
+
+    bool rectangleBounds(int &top, int &bottom, int &left, int &right,
+                         uint &start, uint &end) {
+        if (!rectangleValid_) return false;
+        top = std::min(rectTop_, rectBottom_);
+        bottom = std::max(rectTop_, rectBottom_);
+        left = std::min(rectLeft_, rectRight_);
+        right = std::max(rectLeft_, rectRight_);
+        if (left == right) return false;
+        start = lineOffset(top);
+        end = lineEnd(lineOffset(bottom));
+        return true;
+    }
+
+    void setRectangleStart() {
+        rectTop_ = rectBottom_ = lineNumber(curPtr);
+        rectLeft_ = rectRight_ = charPos(lineStart(curPtr), curPtr);
+        rectangleValid_ = false;
+        rectangleHidden_ = false;
+        drawView();
+    }
+
+    void setRectangleEnd() {
+        rectBottom_ = lineNumber(curPtr);
+        rectRight_ = charPos(lineStart(curPtr), curPtr);
+        rectangleValid_ = rectTop_ != rectBottom_ || rectLeft_ != rectRight_;
+        rectangleHidden_ = false;
+        drawView();
+    }
+
+    std::string rectangleText() {
+        int top, bottom, left, right;
+        uint start, end;
+        if (!rectangleBounds(top, bottom, left, right, start, end)) return {};
+        std::string result;
+        for (int row = top; row <= bottom; ++row) {
+            const uint rowStart = lineOffset(row);
+            const uint rowEnd = lineEnd(rowStart);
+            const uint from = std::min(charPtr(rowStart, left), rowEnd);
+            const uint to = std::min(charPtr(rowStart, right), rowEnd);
+            int column = charPos(rowStart, from);
+            while (column < left) { result.push_back(' '); ++column; }
+            for (uint p = from; p < to; p = nextChar(p))
+                result.push_back(bufChar(p));
+            while (column++ < right && to == rowEnd)
+                result.push_back(' ');
+            if (row < bottom) result.push_back('\n');
+        }
+        return result;
+    }
+
+    void copyRectangle(bool toSystemClipboard) {
+        rectClipboard_ = rectangleText();
+        if (!toSystemClipboard || !TEditor::clipboard) return;
+        TEditor *clip = TEditor::clipboard;
+        clip->setBufLen(0);
+        clip->setCurPtr(0, 0);
+        if (!rectClipboard_.empty())
+            clip->insertText(rectClipboard_.data(), static_cast<uint>(rectClipboard_.size()), False);
+    }
+
+    void editRectangle(int operation) {
+        int top, bottom, left, right;
+        uint start, end;
+        if (!rectangleBounds(top, bottom, left, right, start, end)) return;
+        std::string changed;
+        for (int row = top; row <= bottom; ++row) {
+            const uint rowStart = lineOffset(row);
+            const uint rowEnd = lineEnd(rowStart);
+            const uint from = std::min(charPtr(rowStart, left), rowEnd);
+            const uint to = std::min(charPtr(rowStart, right), rowEnd);
+            for (uint p = rowStart; p < from; p = nextChar(p)) changed.push_back(bufChar(p));
+            if (operation == 1) {
+                for (int column = left; column < right; ++column) changed.push_back(' ');
+            } else if (operation == 2 || operation == 3) {
+                for (uint p = from; p < to; p = nextChar(p)) {
+                    const unsigned char c = static_cast<unsigned char>(bufChar(p));
+                    changed.push_back(static_cast<char>(operation == 2 ? std::toupper(c) : std::tolower(c)));
+                }
+            }
+            for (uint p = to; p < rowEnd; p = nextChar(p)) changed.push_back(bufChar(p));
+            if (row < bottom) {
+                const uint next = nextLine(rowStart);
+                for (uint p = rowEnd; p < next; p = nextChar(p)) changed.push_back(bufChar(p));
+            }
+        }
+        setSelect(start, end, False);
+        insertText(changed.data(), static_cast<uint>(changed.size()), False);
+    }
+
+    void pasteRectangle() {
+        if (rectClipboard_.empty() && TEditor::clipboard) {
+            rectClipboard_.reserve(TEditor::clipboard->bufLen);
+            for (uint p = 0; p < TEditor::clipboard->bufLen; ++p)
+                rectClipboard_.push_back(TEditor::clipboard->bufChar(p));
+        }
+        if (rectClipboard_.empty()) return;
+        const int top = lineNumber(curPtr);
+        const int column = charPos(lineStart(curPtr), curPtr);
+        std::istringstream input(rectClipboard_);
+        std::string rowText;
+        int row = 0;
+        while (std::getline(input, rowText)) {
+            uint rowStart = lineOffset(top + row);
+            if (rowStart >= bufLen && rowStart != 0) break;
+            const uint rowEnd = lineEnd(rowStart);
+            const uint position = std::min(charPtr(rowStart, column), rowEnd);
+            setCurPtr(position, 0);
+            int currentColumn = charPos(rowStart, position);
+            while (currentColumn++ < column) insertText(" ", 1, False);
+            if (!rowText.empty()) insertText(rowText.data(), static_cast<uint>(rowText.size()), False);
+            ++row;
+        }
+        trackCursor(True);
+    }
+
+    void moveRectangle() {
+        const int destinationLine = lineNumber(curPtr);
+        const int destinationColumn = charPos(lineStart(curPtr), curPtr);
+        copyRectangle(false);
+        if (rectClipboard_.empty()) return;
+        const int top = std::min(rectTop_, rectBottom_);
+        const int bottom = std::max(rectTop_, rectBottom_);
+        editRectangle(0);
+        const int row = destinationLine > bottom ? destinationLine - (bottom - top + 1) : destinationLine;
+        setCurPtr(std::min(lineOffset(std::max(1, row)), bufLen), 0);
+        setCurPtr(std::min(charPtr(lineStart(curPtr), destinationColumn), bufLen), 0);
+        pasteRectangle();
+    }
+
+    struct SnippetUndo {
+        uint start = 0;
+        uint caret = 0;
+        std::string removed;
+        std::string inserted;
+        bool valid = false;
+    };
+
+    static constexpr uint invalidPosition = std::numeric_limits<uint>::max();
+    static constexpr size_t maxMacroEvents = 4096;
+
+    static bool isUndo(const TEvent &event) {
+        return event.what == evCommand && event.message.command == cmUndo;
+    }
+
+    std::string bufferText() {
+        std::string text;
+        text.reserve(bufLen);
+        for (uint i = 0; i < bufLen; ++i)
+            text.push_back(bufChar(i));
+        return text;
+    }
+
+    void saveSnippetUndo(const std::string &before, uint caret) {
+        const std::string after = bufferText();
+        if (before == after)
+            return;
+        size_t start = 0;
+        while (start < before.size() && start < after.size() && before[start] == after[start])
+            ++start;
+        size_t oldEnd = before.size();
+        size_t newEnd = after.size();
+        while (oldEnd > start && newEnd > start && before[oldEnd - 1] == after[newEnd - 1]) {
+            --oldEnd;
+            --newEnd;
+        }
+        snippetUndo_.start = static_cast<uint>(start);
+        snippetUndo_.caret = caret;
+        snippetUndo_.removed = before.substr(start, oldEnd - start);
+        snippetUndo_.inserted = after.substr(start, newEnd - start);
+        snippetUndo_.valid = true;
+    }
+
+    bool canUndoSnippet() {
+        if (!snippetUndo_.valid || snippetUndo_.start + snippetUndo_.inserted.size() > bufLen)
+            return false;
+        for (size_t i = 0; i < snippetUndo_.inserted.size(); ++i)
+            if (bufChar(snippetUndo_.start + static_cast<uint>(i)) != snippetUndo_.inserted[i])
+                return false;
+        return true;
+    }
+
+    void undoSnippet() {
+        const SnippetUndo undo = std::move(snippetUndo_);
+        snippetUndo_ = {};
+        setSelect(undo.start, undo.start + static_cast<uint>(undo.inserted.size()), False);
+        if (undo.removed.empty())
+            deleteSelect();
+        else
+            insertText(undo.removed.data(), static_cast<uint>(undo.removed.size()), False);
+        setCurPtr(std::min<uint>(undo.caret, bufLen), 0);
+        trackCursor(True);
+        updateCommands();
+        tokensValid_ = false;
+    }
+
+    static bool isEnter(const TEvent &event) {
+        return (event.what == evCommand && event.message.command == cmNewLine) ||
+               (event.what == evKeyDown && event.keyDown.keyCode == kbEnter);
+    }
+
+    static bool isCloseBrace(const TEvent &event) {
+        return event.what == evKeyDown &&
+               ((event.keyDown.textLength == 1 && event.keyDown.text[0] == '}') ||
+                event.keyDown.charScan.charCode == '}');
+    }
+
+    static bool recordable(const TEvent &event) {
+        if (event.what == evKeyDown)
+            return true;
+        if (event.what != evCommand)
+            return false;
+        const ushort command = event.message.command;
+        return (command >= cmCharLeft && command <= cmEncoding) ||
+               command == cmCut || command == cmPaste || command == cmUndo ||
+               command == cmClear || command == cmSelectAll;
+    }
+
+    void refreshWindowTitle() {
+        if (auto *window = dynamic_cast<TWindow *>(owner))
+            if (window->frame)
+                window->frame->drawView();
+    }
+
+    bool insertDedentedCloseBrace() {
+        if (hasSelection())
+            return false;
+        ensureTokens();
+        const uint begin = lineStart(curPtr);
+        uint p = begin;
+        int column = 0;
+        while (p < curPtr) {
+            const char c = bufChar(p);
+            if (c != ' ' && c != '\t')
+                return false;
+            const int tab = std::max(1, TEditor::tabSize);
+            column += c == '\t' ? tab - (column % tab) : 1;
+            p = nextChar(p);
+        }
+        if (!column)
+            return false;
+        const int tab = std::max(1, TEditor::tabSize);
+        const int target = std::max(0, column - tab);
+        p = curPtr;
+        int newColumn = column;
+        while (p > begin && newColumn > target) {
+            const uint previous = prevChar(p);
+            const char c = bufChar(previous);
+            const int width = c == '\t' ? tab - ((newColumn - 1) % tab) : 1;
+            newColumn = std::max(0, newColumn - width);
+            p = previous;
+        }
+        if (p >= curPtr)
+            return false;
+        setSelect(p, curPtr, False);
+        insertText("}", 1, False);
+        trackCursor(True);
+        return true;
+    }
+
+    void indentAfterOpenBrace() {
+        ensureTokens();
+        uint p = curPtr;
+        while (p > 0) {
+            const uint previous = prevChar(p);
+            const char c = bufChar(previous);
+            if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+                p = previous;
+                continue;
+            }
+            if (c == '{' && previous < tokens_.size() && tokens_[previous] == tokenNormal) {
+                const std::string indentation(static_cast<size_t>(std::max(1, TEditor::tabSize)), ' ');
+                insertText(indentation.data(), static_cast<uint>(indentation.size()), False);
+                trackCursor(True);
+            }
+            break;
+        }
+    }
+
+    static char matchingOpen(char c) {
+        switch (c) {
+        case ')': return '(';
+        case ']': return '[';
+        case '}': return '{';
+        default: return 0;
+        }
+    }
+
+    static char matchingClose(char c) {
+        switch (c) {
+        case '(': return ')';
+        case '[': return ']';
+        case '{': return '}';
+        default: return 0;
+        }
+    }
+
+    uint findMatchingBracket(uint position) {
+        ensureTokens();
+        if (position >= bufLen || position >= tokens_.size() || tokens_[position] != tokenNormal)
+            return invalidPosition;
+        const char bracket = bufChar(position);
+        if (const char close = matchingClose(bracket)) {
+            std::vector<char> expected{close};
+            for (uint p = nextChar(position); p < bufLen; p = nextChar(p)) {
+                if (p >= tokens_.size() || tokens_[p] != tokenNormal)
+                    continue;
+                const char c = bufChar(p);
+                if (const char nested = matchingClose(c)) {
+                    expected.push_back(nested);
+                } else if (matchingOpen(c)) {
+                    if (expected.back() == c) {
+                        expected.pop_back();
+                        if (expected.empty())
+                            return p;
+                    }
+                }
+            }
+        } else if (const char open = matchingOpen(bracket)) {
+            std::vector<char> expected{open};
+            for (uint p = position; p > 0;) {
+                p = prevChar(p);
+                if (p >= tokens_.size() || tokens_[p] != tokenNormal)
+                    continue;
+                const char c = bufChar(p);
+                if (const char nested = matchingOpen(c)) {
+                    expected.push_back(nested);
+                } else if (matchingClose(c)) {
+                    if (expected.back() == c) {
+                        expected.pop_back();
+                        if (expected.empty())
+                            return p;
+                    }
+                }
+            }
+        }
+        return invalidPosition;
+    }
+
+    void updateMatchingBracket() {
+        const uint oldOpen = matchingOpen_;
+        const uint oldClose = matchingClose_;
+        matchingOpen_ = matchingClose_ = matchingTarget_ = invalidPosition;
+        const auto isBracket = [](char c) { return matchingOpen(c) || matchingClose(c); };
+        uint candidate = invalidPosition;
+        if (curPtr < bufLen && isBracket(bufChar(curPtr)))
+            candidate = curPtr;
+        else if (curPtr > 0 && isBracket(bufChar(prevChar(curPtr))))
+            candidate = prevChar(curPtr);
+        if (candidate < bufLen) {
+            const uint match = findMatchingBracket(candidate);
+            if (match != invalidPosition) {
+                if (matchingOpen(bufChar(candidate))) {
+                    matchingOpen_ = match;
+                    matchingClose_ = candidate;
+                    matchingTarget_ = match;
+                } else {
+                    matchingOpen_ = candidate;
+                    matchingClose_ = match;
+                    matchingTarget_ = match;
+                }
+            }
+        }
+        if (oldOpen != matchingOpen_ || oldClose != matchingClose_)
+            drawView();
+    }
+
     uint lineOffset(int line) {
         uint position = 0;
         for (int current = 1; line > 0 && current < line && position < bufLen; ++current)
@@ -326,8 +1149,30 @@ private:
     }
 
     std::vector<unsigned char> tokens_;
+    std::vector<TEvent> macroEvents_;
     std::unordered_set<int> breakpointLines_;
+    SnippetUndo snippetUndo_;
+    std::string rectClipboard_;
+    uint marks_[10]{};
+    bool markSet_[10]{};
+    uint blockStart_ = 0;
+    uint lastCursor_ = 0;
+    int prefixMode_ = 0;
+    int prefixPage_ = 0;
+    bool blockSelecting_ = false;
+    bool rectangleValid_ = false;
+    bool rectangleHidden_ = false;
+    bool moveOnPaste_ = false;
+    int rectTop_ = 1;
+    int rectBottom_ = 1;
+    int rectLeft_ = 0;
+    int rectRight_ = 0;
+    uint matchingOpen_ = invalidPosition;
+    uint matchingClose_ = invalidPosition;
+    uint matchingTarget_ = invalidPosition;
     bool tokensValid_ = false;
+    bool recording_ = false;
+    bool replaying_ = false;
     uint diagnosticLineStart_ = std::numeric_limits<uint>::max();
     uint executionLineStart_ = std::numeric_limits<uint>::max();
 };
@@ -360,4 +1205,29 @@ SyntaxEditWindow::SyntaxEditWindow(const TRect &bounds, TStringView fileName, in
                                           editorFileName);
     editor = syntaxEditor;
     insert(syntaxEditor);
+}
+
+const char *SyntaxEditWindow::getTitle(short maxSize) {
+    const char *base = TEditWindow::getTitle(maxSize);
+    if (!isEditorFeatureRecording(editor))
+        return base;
+    titleBuffer_ = base;
+    titleBuffer_ += " [REC]";
+    return titleBuffer_.c_str();
+}
+
+bool runEditorFeature(TFileEditor *editor, ushort command) {
+    if (auto *syntaxEditor = dynamic_cast<SyntaxEditor *>(editor))
+        return syntaxEditor->runFeature(command);
+    return false;
+}
+
+bool isEditorFeatureRecording(TFileEditor *editor) {
+    if (auto *syntaxEditor = dynamic_cast<SyntaxEditor *>(editor))
+        return syntaxEditor->recording();
+    return false;
+}
+
+bool editorSupportsPrefixKeys(TFileEditor *editor) {
+    return dynamic_cast<SyntaxEditor *>(editor) != nullptr;
 }

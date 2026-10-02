@@ -12,7 +12,18 @@ cmake --build .build/ide --config Release --target turboide
 .\.build\ide\Release\turboide.exe
 ```
 
-CMake при первой настройке получает закреплённую ревизию Turbo Vision.
+CMake при первой настройке скачивает из [magiblot/tvision](https://github.com/magiblot/tvision) закреплённую в `CMakeLists.txt` ревизию Turbo Vision через `FetchContent`. Отдельно устанавливать или вручную добавлять include- и library-файлы не нужно; для первой настройки требуется доступ к GitHub.
+
+Если Turbo Vision уже скачан или нужен локальный checkout, передайте CMake путь к его корню через `FETCHCONTENT_SOURCE_DIR_TVISION`:
+
+```powershell
+git clone https://github.com/magiblot/tvision.git C:/dev/tvision
+cmake -S . -B .build/ide-local -G "Visual Studio 17 2022" -A x64 `
+  -DFETCHCONTENT_SOURCE_DIR_TVISION=C:/dev/tvision
+cmake --build .build/ide-local --config Release --target turboide
+```
+
+Указывайте корневую папку репозитория `tvision` — ту, где находится `CMakeLists.txt`. TurboIDE применяет небольшие совместимые правки к исходникам Turbo Vision во время конфигурации CMake, поэтому используйте закреплённую в `CMakeLists.txt` ревизию или проверьте совместимость новой версии. Путь с пробелами задавайте в кавычках.
 
 ## Компилятор GCC
 
