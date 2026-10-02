@@ -688,11 +688,12 @@ private:
     }
 
     void readBlock() {
-        char path[512]{};
+        char path[512] = "*.*";
         TView *dialog = TProgram::application->validView(
             new TFileDialog("*.*", "Read block", "~N~ame", fdOpenButton, 120));
         if (!dialog) return;
-        const bool accepted = TProgram::deskTop->execView(dialog) == cmOK;
+        dialog->setData(path);
+        const bool accepted = TProgram::deskTop->execView(dialog) != cmCancel;
         if (accepted)
             dialog->getData(path);
         TObject::destroy(dialog);
