@@ -96,13 +96,9 @@ public:
     void handleEvent(TEvent &event) override {
         if (startsMouseSelection(event)) {
             discardSelectionAnchor();
-            shiftSelectionActive_ = false;
         } else if (isShiftNavigation(event)) {
-            if (!shiftSelectionActive_)
+            if (!hasSelection() || (curPtr != selStart && curPtr != selEnd))
                 discardSelectionAnchor();
-            shiftSelectionActive_ = true;
-        } else {
-            shiftSelectionActive_ = false;
         }
         if (replaceClipboardSelection_) {
             if (event.what == evKeyDown && (event.keyDown.controlKeyState & kbPaste) &&
@@ -1492,7 +1488,6 @@ private:
     int prefixMode_ = 0;
     int prefixPage_ = 0;
     bool blockSelecting_ = false;
-    bool shiftSelectionActive_ = false;
     bool persistentBlocks_ = false;
     bool blockHidden_ = false;
     bool replaceClipboardSelection_ = false;

@@ -69,13 +69,18 @@ int main() {
     assert(editor.selStart == 4);
     assert(editor.selEnd == 6);
 
+    event = keyEvent(kbRight, kbShift);
+    editor.handleEvent(event);
+    assert(editor.selStart == 4);
+    assert(editor.selEnd == 7);
+
     event = {};
     event.what = evCommand;
     event.message.command = cmTextStart;
     editor.handleEvent(event);
     assert(editor.curPtr == 0);
     assert(editor.selStart == 4);
-    assert(editor.selEnd == 6);
+    assert(editor.selEnd == 7);
 
     event = keyEvent(kbRight, kbShift);
     editor.handleEvent(event);
