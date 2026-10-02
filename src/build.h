@@ -5,6 +5,14 @@
 #include <string>
 #include <vector>
 
+enum class BuildMessageKind {
+    info,
+    note,
+    warning,
+    error,
+    fatal
+};
+
 struct BuildMessage {
     std::string text;
     std::filesystem::path file;
@@ -12,6 +20,7 @@ struct BuildMessage {
     int column = 0;
     bool hasLocation = false;
     std::string display;
+    BuildMessageKind kind = BuildMessageKind::info;
 };
 
 struct BuildResult {

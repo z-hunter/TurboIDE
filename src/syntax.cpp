@@ -26,7 +26,7 @@
 IDETheme::IDETheme()
     : application(cpAppColor, sizeof(cpAppColor) - 1),
       messagesWindow("\x0B\x0B\x0B\x0B\x0B\x0B\x0B\x0B", 8),
-      messagesList("\x01\x01\x01\x01\x01", 5) {}
+      messagesList("\x01\x01\x02\x03\x04", 5) {}
 
 IDETheme &ideTheme() {
     static IDETheme theme;

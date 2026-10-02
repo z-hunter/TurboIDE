@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <string_view>
+#include <utility>
 
 namespace {
 std::wstring quote(const std::wstring &argument) {
@@ -99,10 +100,16 @@ BuildMessage parseMessage(std::string_view bytes, const std::filesystem::path &w
     message.text = toUtf8(wide);
 
     size_t marker = std::wstring::npos;
-    for (const wchar_t *candidate : {L": fatal error: ", L": error: ", L": warning: ", L": note: "}) {
+    for (const auto &[candidate, kind] : {
+             std::pair{std::wstring_view(L": fatal error: "), BuildMessageKind::fatal},
+             std::pair{std::wstring_view(L": error: "), BuildMessageKind::error},
+             std::pair{std::wstring_view(L": warning: "), BuildMessageKind::warning},
+             std::pair{std::wstring_view(L": note: "), BuildMessageKind::note}}) {
         const size_t found = wide.find(candidate);
-        if (found != std::wstring::npos && (marker == std::wstring::npos || found < marker))
+        if (found != std::wstring::npos && (marker == std::wstring::npos || found < marker)) {
             marker = found;
+            message.kind = kind;
+        }
     }
     if (marker == std::wstring::npos)
         return message;

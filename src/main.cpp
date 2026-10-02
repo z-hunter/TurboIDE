@@ -17,6 +17,7 @@
 #define Uses_TMenuBar
 #define Uses_TMenuItem
 #define Uses_TMenu
+#define Uses_TPoint
 #define Uses_TStatusDef
 #define Uses_TStatusItem
 #define Uses_TStatusLine
@@ -31,6 +32,7 @@
 #define Uses_TFindDialogRec
 #define Uses_TScrollBar
 #define Uses_TScreen
+#define Uses_TMenuPopup
 #include <tvision/tv.h>
 
 #include "build.h"
@@ -103,6 +105,9 @@ constexpr ushort cmRunDirectory = 119;
 constexpr ushort cmEnvironment = 120;
 constexpr ushort cmWindowList = 121;
 constexpr ushort cmChangeDirectory = 122;
+constexpr ushort cmMessagesClear = 137;
+constexpr ushort cmMessagesGotoSource = 138;
+constexpr ushort cmMessagesTrackSource = 139;
 constexpr ushort cmDebugStart = 123;
 constexpr ushort cmDebugContinue = 124;
 constexpr ushort cmDebugStepInto = 125;
@@ -169,6 +174,11 @@ public:
         drawView();
     }
 
+    void setDiagnosticMessage(std::string text) {
+        diagnosticMessage_ = std::move(text);
+        drawView();
+    }
+
     void advancePrefixPage(TFileEditor *editor) {
         if (prefixEditor_ != editor || !prefixMode_) return;
         const auto pages = makePages(commandsFor(prefixMode_), prefixFor(prefixMode_), availableHintWidth());
@@ -206,6 +216,10 @@ public:
             TStatusLine::draw();
             return;
         }
+        if (!diagnosticMessage_.empty()) {
+            drawHint(diagnosticMessage_.c_str(), 0, size.x);
+            return;
+        }
         const auto *window = TProgram::deskTop
             ? dynamic_cast<TEditWindow *>(TProgram::deskTop->current) : nullptr;
         if (!window || !editorSupportsPrefixKeys(window->editor)) {
@@ -226,6 +240,7 @@ public:
 
 private:
     bool menuActive_ = false;
+    std::string diagnosticMessage_;
 
     static const char *contextHint(ushort context) {
         switch (context) {
@@ -607,6 +622,10 @@ public:
     bool goToLocation(const std::filesystem::path &file, int line, int column);
     bool trackMessage(const std::filesystem::path &file, int line, int column,
                       size_t index);
+    bool gotoMessage(size_t index);
+    void clearMessages();
+    void selectMessageIndex(size_t index);
+    void setMessageStatus(const BuildMessage *message);
     void hideMessages();
     void dismissMessages(BuildMessagesWindow *window);
     void dismissBuildPopup();
@@ -977,11 +996,17 @@ public:
         std::snprintf(dest, static_cast<size_t>(maxLen) + 1, "%s", text.c_str());
     }
 
-    Boolean isSelected(short) override { return False; }
+    void popupMessageMenu(TPoint where) {
+        popupMenu(where,
+            *new TMenuItem("~C~lear", cmMessagesClear, kbNoKey) + newLine() +
+            *new TMenuItem("~G~oto source", cmMessagesGotoSource, kbNoKey) +
+            *new TMenuItem("~T~rack source", cmMessagesTrackSource, kbNoKey), app_);
+    }
 
     void selectItem(short item) override {
         if (item >= 0 && static_cast<size_t>(item) < messages_->size()) {
             const auto &selected = (*messages_)[static_cast<size_t>(item)];
+            app_->selectMessageIndex(static_cast<size_t>(item));
             if (selected.hasLocation)
                 app_->trackMessage(selected.file, selected.line, selected.column,
                                    static_cast<size_t>(item));
@@ -992,15 +1017,35 @@ public:
         return ideTheme().messagesList;
     }
 
+    TColorAttr mapColor(uchar index) override {
+        const TPalette &palette = getPalette();
+        if (index == 0 || index > palette[0])
+            return errorAttr;
+        TColorAttr color = app_->mapColor(palette[index]);
+        if (index == 3 || index == 4) {
+            const TColorAttr menuSelected = app_->mapColor(menuSelectedPaletteIndex);
+            color.setBackground(menuSelected.getBackground());
+        }
+        return color;
+    }
+
     void handleEvent(TEvent &event) override {
+        if (event.what == evMouseDown && (event.mouse.buttons & mbRightButton)) {
+            popupMessageMenu(event.mouse.where);
+            clearEvent(event);
+            return;
+        }
+        if (event.what == evKeyDown && TKey(event.keyDown) == kbShiftF10) {
+            TPoint where{};
+            where.x = 0;
+            where.y = size.y - 1;
+            popupMessageMenu(makeGlobal(where));
+            clearEvent(event);
+            return;
+        }
         if (event.what == evKeyDown && event.keyDown.keyCode == kbEnter) {
             if (focused >= 0 && static_cast<size_t>(focused) < messages_->size()) {
-                const auto &selected = (*messages_)[static_cast<size_t>(focused)];
-                if (selected.hasLocation) {
-                    if (app_->trackMessage(selected.file, selected.line, selected.column,
-                                           static_cast<size_t>(focused)))
-                        app_->hideMessages();
-                }
+                app_->gotoMessage(static_cast<size_t>(focused));
             }
             clearEvent(event);
             return;
@@ -1010,6 +1055,8 @@ public:
         if (focused != previousFocus && focused >= 0 &&
             static_cast<size_t>(focused) < messages_->size())
             selectItem(focused);
+        else if (focused < 0 || static_cast<size_t>(focused) >= messages_->size())
+            app_->setMessageStatus(nullptr);
     }
 
     void updateMessages() {
@@ -1030,6 +1077,7 @@ public:
     }
 
 private:
+    static constexpr uchar menuSelectedPaletteIndex = 5;
     TurboIDEApp *app_;
     const std::vector<BuildMessage> *messages_;
 };
@@ -1047,10 +1095,25 @@ public:
         list_ = new BuildMessageList(TRect(1, 1, size.x - 1, size.y - 2),
                                      horizontal, vertical, app, messages);
         insert(list_);
+        setCurrent(list_, TGroup::enterSelect);
     }
 
     void updateMessages() { list_->updateMessages(); }
-    void focusMessage(size_t index) { list_->focusMessage(index); }
+    void focusMessage(size_t index) {
+        list_->focusMessage(index);
+        setCurrent(list_, TGroup::enterSelect);
+        list_->setState(sfSelected | sfActive | sfFocused, True);
+        list_->drawView();
+    }
+
+    void handleEvent(TEvent &event) override {
+        if (event.what == evKeyDown) {
+            list_->handleEvent(event);
+            if (event.what == evNothing)
+                return;
+        }
+        TWindow::handleEvent(event);
+    }
 
     TPalette &getPalette() const override {
         return ideTheme().messagesWindow;
@@ -1955,7 +2018,7 @@ void TurboIDEApp::startBuild(BuildRequest request, bool runAfterBuild,
             runReturnFile_ = std::filesystem::absolute(
                 std::filesystem::u8path(window->editor->fileName)).lexically_normal();
     }
-    messages_.clear();
+    clearMessages();
     messages_.push_back({"Building with GCC...", {}, 0, 0, false});
     messageIndex_ = messages_.size();
     if (messagesWindow_)
@@ -2022,15 +2085,28 @@ void TurboIDEApp::showBuildResult(BuildResult result) {
     const bool succeeded = result.succeeded;
     const auto executable = result.executable;
     messages_ = std::move(result.messages);
-    messageIndex_ = messages_.size();
     if (!result.error.empty())
-        messages_.push_back({result.error, {}, 0, 0, false});
+        messages_.push_back({result.error, {}, 0, 0, false, {}, BuildMessageKind::error});
     if (messages_.empty())
         messages_.push_back({result.succeeded ? "Build succeeded." : "Build failed.", {}, 0, 0, false});
     if (result.succeeded)
         messages_.push_back({"Build succeeded: " + result.executable.u8string(), {}, 0, 0, false});
     else if (result.started)
         messages_.push_back({"Build failed (exit code " + std::to_string(result.exitCode) + ").", {}, 0, 0, false});
+
+    messageIndex_ = messages_.size();
+    if (!succeeded) {
+        const auto firstError = std::find_if(messages_.begin(), messages_.end(), [](const BuildMessage &message) {
+            return message.kind == BuildMessageKind::error || message.kind == BuildMessageKind::fatal;
+        });
+        const auto firstLocated = std::find_if(messages_.begin(), messages_.end(), [](const BuildMessage &message) {
+            return message.hasLocation;
+        });
+        const auto selected = firstError != messages_.end() ? firstError : firstLocated;
+        if (selected != messages_.end())
+            messageIndex_ = static_cast<size_t>(std::distance(messages_.begin(), selected));
+    }
+    setMessageStatus(nullptr);
 
     if (messagesWindow_)
         messagesWindow_->updateMessages();
@@ -2243,8 +2319,9 @@ void TurboIDEApp::startDebuggee(const std::filesystem::path &executable) {
         messageBox("Cannot create the user screen buffer.", mfError | mfOKButton);
         return;
     }
-    messages_.clear();
+    clearMessages();
     messages_.push_back({"Starting GDB...", {}, 0, 0, false});
+    messageIndex_ = messages_.size();
     if (messagesWindow_) messagesWindow_->updateMessages();
     auto session = std::make_unique<GdbSession>();
     DebugStop firstStop;
@@ -2571,8 +2648,10 @@ void TurboIDEApp::dismissBuildPopup() {
 }
 
 void TurboIDEApp::dismissMessages(BuildMessagesWindow *window) {
-    if (messagesWindow_ == window)
+    if (messagesWindow_ == window) {
         messagesWindow_ = nullptr;
+        setMessageStatus(nullptr);
+    }
 }
 
 void TurboIDEApp::showMessages() {
@@ -2588,6 +2667,8 @@ void TurboIDEApp::showMessages() {
     messagesWindow_->show();
     if (messageIndex_ < messages_.size())
         messagesWindow_->focusMessage(messageIndex_);
+    else if (!messages_.empty())
+        messagesWindow_->focusMessage(0);
     if (deskTop->first() != messagesWindow_)
         messagesWindow_->putInFrontOf(deskTop->first());
     deskTop->setCurrent(messagesWindow_, TGroup::enterSelect);
@@ -2603,6 +2684,7 @@ bool TurboIDEApp::trackMessage(const std::filesystem::path &file, int line, int 
     messageIndex_ = index;
     if (!goToLocation(file, line, column))
         return false;
+    setMessageStatus(index < messages_.size() ? &messages_[index] : nullptr);
     if (messagesWindow_) {
         messagesWindow_->show();
         if (deskTop->first() != messagesWindow_)
@@ -2610,6 +2692,51 @@ bool TurboIDEApp::trackMessage(const std::filesystem::path &file, int line, int 
         deskTop->setCurrent(messagesWindow_, TGroup::enterSelect);
     }
     return true;
+}
+
+bool TurboIDEApp::gotoMessage(size_t index) {
+    if (index >= messages_.size() || !messages_[index].hasLocation)
+        return false;
+    auto &selected = messages_[index];
+    bool opened = goToLocation(selected.file, selected.line, selected.column);
+    if (!opened && !std::filesystem::exists(selected.file)) {
+        char fileName[MAXPATH]{};
+        const auto suggested = selected.file.filename().u8string();
+        std::snprintf(fileName, sizeof(fileName), "%s", suggested.c_str());
+        if (execDialog(new TFileDialog("*.*", "Locate source file", "~N~ame",
+                                       fdOpenButton, 100), fileName) == cmCancel)
+            return false;
+        selected.file = std::filesystem::u8path(fileName);
+        opened = goToLocation(selected.file, selected.line, selected.column);
+    }
+    if (!opened)
+        return false;
+    messageIndex_ = index;
+    setMessageStatus(&selected);
+    hideMessages();
+    return true;
+}
+
+void TurboIDEApp::clearMessages() {
+    messages_.clear();
+    messageIndex_ = 0;
+    for (TView *view = deskTop->first(); view; view = view->nextView())
+        if (auto *window = dynamic_cast<TEditWindow *>(view))
+            setEditorDiagnostic(window->editor, 0);
+    setMessageStatus(nullptr);
+    if (messagesWindow_)
+        messagesWindow_->updateMessages();
+}
+
+void TurboIDEApp::setMessageStatus(const BuildMessage *message) {
+    auto *status = dynamic_cast<IDEStatusLine *>(TProgram::statusLine);
+    if (status)
+        status->setDiagnosticMessage(message && message->hasLocation ? message->text : std::string{});
+}
+
+void TurboIDEApp::selectMessageIndex(size_t index) {
+    messageIndex_ = index;
+    setMessageStatus(index < messages_.size() ? &messages_[index] : nullptr);
 }
 
 void TurboIDEApp::navigateMessage(bool forward) {
@@ -2624,8 +2751,10 @@ void TurboIDEApp::navigateMessage(bool forward) {
         if (message.hasLocation) {
             if (messagesWindow_)
                 messagesWindow_->focusMessage(messageIndex_);
-            if (goToLocation(message.file, message.line, message.column))
+            if (goToLocation(message.file, message.line, message.column)) {
+                setMessageStatus(&message);
                 return;
+            }
         }
     }
     showMessages();
@@ -2647,6 +2776,9 @@ bool TurboIDEApp::goToLocation(const std::filesystem::path &file, int line, int 
     }
 
     if (!editorWindow) {
+        std::error_code fileError;
+        if (!std::filesystem::is_regular_file(target, fileError))
+            return false;
         const auto utf8 = target.u8string();
         openEditor(utf8.c_str());
         for (TView *view = deskTop->first(); view; view = view->nextView()) {
@@ -2864,6 +2996,19 @@ void TurboIDEApp::handleEvent(TEvent &event) {
     case cmShowMessages:
     case cmCompilerMessages:
         showMessages();
+        break;
+    case cmMessagesClear:
+        clearMessages();
+        break;
+    case cmMessagesGotoSource:
+        if (messageIndex_ < messages_.size())
+            gotoMessage(messageIndex_);
+        break;
+    case cmMessagesTrackSource:
+        if (messageIndex_ < messages_.size() && messages_[messageIndex_].hasLocation) {
+            const auto &message = messages_[messageIndex_];
+            trackMessage(message.file, message.line, message.column, messageIndex_);
+        }
         break;
     case cmNextMessage:
         navigateMessage(true);
