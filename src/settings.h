@@ -5,6 +5,7 @@
 
 struct IDESettings {
     int tabSize = 8;
+    bool backupFiles = true;
     bool persistentBlocks = true;
     std::string defaultExtension = ".c";
     std::filesystem::path currentDirectory;

@@ -1,6 +1,9 @@
 #define Uses_TApplication
 #define Uses_TButton
 #define Uses_TCheckBoxes
+#define Uses_TColorDialog
+#define Uses_TColorGroup
+#define Uses_TColorItem
 #define Uses_TDeskTop
 #define Uses_TDialog
 #define Uses_TEditWindow
@@ -27,6 +30,7 @@
 #define Uses_TReplaceDialogRec
 #define Uses_TFindDialogRec
 #define Uses_TScrollBar
+#define Uses_TScreen
 #include <tvision/tv.h>
 
 #include "build.h"
@@ -110,7 +114,36 @@ constexpr ushort cmCommandPrompt = 130;
 constexpr ushort cmAddWatch = 131;
 constexpr ushort cmEvaluateWatches = 132;
 constexpr ushort cmShowLocals = 134;
+constexpr ushort cmHelp = 135;
+constexpr ushort cmColors = 136;
 constexpr ushort cmGoToLine = 145;
+
+// Contexts are local IDs; TMenuView supplies parent fallback for hcNoContext.
+constexpr ushort hcFileMenu = 1000;
+constexpr ushort hcEditMenu = 1001;
+constexpr ushort hcSearchMenu = 1002;
+constexpr ushort hcRunMenu = 1003;
+constexpr ushort hcCompileMenu = 1004;
+constexpr ushort hcDebugMenu = 1005;
+constexpr ushort hcProjectMenu = 1006;
+constexpr ushort hcToolsMenu = 1007;
+constexpr ushort hcOptionsMenu = 1008;
+constexpr ushort hcWindowMenu = 1009;
+constexpr ushort hcHelpMenu = 1010;
+constexpr ushort hcEnvironmentMenu = 1011;
+constexpr ushort hcEnvironmentPreferences = 1012;
+constexpr ushort hcEnvironmentEditor = 1013;
+constexpr ushort hcEnvironmentMouse = 1014;
+constexpr ushort hcEnvironmentStartup = 1015;
+constexpr ushort hcEnvironmentColors = 1016;
+constexpr ushort hcEditorDialog = 1017;
+constexpr ushort hcEditorTabSize = 1018;
+constexpr ushort hcEditorPersistentBlocks = 1019;
+
+TMenuItem *disabledMenuItem(TMenuItem *item) {
+    item->disabled = True;
+    return item;
+}
 
 class TurboIDEApp;
 class BuildMessagesWindow;
@@ -145,6 +178,8 @@ public:
     }
 
     const char *hint(ushort context) override {
+        if (const char *text = contextHint(context); *text)
+            return text;
         if (menuActive_ || (TProgram::application && TProgram::application->current != TProgram::deskTop))
             return "";
         const auto *window = TProgram::deskTop
@@ -163,7 +198,11 @@ public:
     }
 
     void draw() override {
-        if (menuActive_ || (TProgram::application && TProgram::application->current != TProgram::deskTop)) {
+        if (menuActive_) {
+            drawMenuHint(hint(helpCtx));
+            return;
+        }
+        if (TProgram::application && TProgram::application->current != TProgram::deskTop) {
             TStatusLine::draw();
             return;
         }
@@ -187,6 +226,44 @@ public:
 
 private:
     bool menuActive_ = false;
+
+    static const char *contextHint(ushort context) {
+        switch (context) {
+        case hcFileMenu: return "File management commands (Open, New, Save, etc.)";
+        case hcEditMenu: return "Cut-and-paste editing commands";
+        case hcSearchMenu: return "Text and error search commands";
+        case hcRunMenu: return "Execute or single-step through a program";
+        case hcCompileMenu: return "Compile to disk or memory";
+        case hcDebugMenu: return "Evaluate expressions, modify data, set breakpoints and watches";
+        case hcProjectMenu: return "Create and manage projects";
+        case hcToolsMenu: return "Tracking commands and user installed tools";
+        case hcOptionsMenu: return "Set defaults for compiler, editor, mouse, debugger, etc.";
+        case hcWindowMenu: return "Open, arrange, and list windows";
+        case hcHelpMenu: return "Get online help";
+        case hcEnvironmentMenu: return "Specify environment settings";
+        case hcEnvironmentPreferences: return "Specify desktop settings";
+        case hcEnvironmentEditor: return "Specify editor settings";
+        case hcEnvironmentMouse: return "Specify mouse settings";
+        case hcEnvironmentStartup: return "Permanently change default startup options";
+        case hcEnvironmentColors: return "Customize IDE colors for windows, menus, etc.";
+        case hcEditorDialog: return "Specify editor settings";
+        case hcEditorTabSize: return "Changes the number of columns to use for tab width";
+        case hcEditorPersistentBlocks: return "Selected block remains highlighted in cursor move";
+        default: return "";
+        }
+    }
+
+    void drawMenuHint(const char *text) {
+        TDrawBuffer buffer;
+        const TAttrPair color = getColor(0x0301);
+        buffer.moveChar(0, ' ', color, size.x);
+        buffer.moveCStr(1, "~F1~ Help", color, size.x - 1);
+        if (size.x > 10) {
+            buffer.moveStr(9, "|", color, size.x - 9);
+            buffer.moveCStr(11, text, color, size.x - 11);
+        }
+        writeLine(0, 0, size.x, 1, buffer);
+    }
 
     static int visibleHintLength(std::string_view text) {
         int length = 0;
@@ -275,7 +352,10 @@ public:
         auto *status = dynamic_cast<IDEStatusLine *>(TProgram::statusLine);
         if (menuInput && status) status->setMenuActive(true);
         TMenuBar::handleEvent(event);
-        if (menuInput && status) status->setMenuActive(false);
+        if (menuInput && status) {
+            status->setMenuActive(false);
+            status->update();
+        }
     }
 };
 
@@ -356,20 +436,42 @@ TDialog *createSingleInputDialog(const char *title, const char *label, unsigned 
 }
 
 TDialog *createEditorDialog(TInputLine *&tabs, TInputLine *&extension,
-                            TCheckBoxes *&persistentBlocks) {
-    auto *dialog = new TDialog(TRect(0, 0, 50, 15), "Editor");
+                            TCheckBoxes *&options) {
+    auto *dialog = new TDialog(TRect(0, 0, 76, 20), "Editor Options");
     dialog->options |= ofCentered;
-    tabs = new TInputLine(TRect(3, 3, 8, 4), 3);
+    dialog->helpCtx = hcEditorDialog;
+    options = new TCheckBoxes(TRect(3, 3, 72, 10),
+        new TSItem("Create backup ~f~iles",
+        new TSItem("~I~nsert mode",
+        new TSItem("~A~uto indent mode",
+        new TSItem("~U~se tab characters",
+        new TSItem("~O~ptimal fill",
+        new TSItem("~B~ackspace unindents",
+        new TSItem("~C~ursor through tabs",
+        new TSItem("~G~roup Undo",
+        new TSItem("~P~ersistent blocks",
+        new TSItem("O~v~erwrite blocks",
+        new TSItem("~S~yntax highlight",
+        new TSItem("B~l~ock insert cursor",
+        new TSItem("Find te~x~t at cursor", nullptr))))))))))))));
+    options->helpCtx = hcEditorPersistentBlocks;
+    options->setButtonState(((1u << 13) - 1) & ~((1u << 0) | (1u << 8)), False);
+    dialog->insert(options);
+    auto *highlight = new TInputLine(TRect(3, 13, 34, 14), 30);
+    char highlightExtensions[] = "*.c;*.h;*.cc;*.cpp;*.hpp";
+    highlight->setData(highlightExtensions);
+    highlight->setState(sfDisabled, True);
+    dialog->insert(highlight);
+    dialog->insert(new TLabel(TRect(3, 12, 28, 13), "~H~ighlight extensions", highlight));
+    tabs = new TInputLine(TRect(39, 13, 43, 14), 3);
+    tabs->helpCtx = hcEditorTabSize;
     dialog->insert(tabs);
-    dialog->insert(new TLabel(TRect(3, 2, 24, 3), "~T~ab size (1-32)", tabs));
-    extension = new TInputLine(TRect(3, 7, 18, 8), 15);
+    dialog->insert(new TLabel(TRect(39, 12, 54, 13), "~T~ab size", tabs));
+    extension = new TInputLine(TRect(3, 16, 18, 17), 15);
     dialog->insert(extension);
-    dialog->insert(new TLabel(TRect(3, 6, 32, 7), "Default file e~x~tension", extension));
-    persistentBlocks = new TCheckBoxes(TRect(3, 9, 40, 11),
-                                       new TSItem("~P~ersistent blocks", nullptr));
-    dialog->insert(persistentBlocks);
-    dialog->insert(new TButton(TRect(22, 12, 32, 14), "O~K~", cmOK, bfDefault));
-    dialog->insert(new TButton(TRect(35, 12, 45, 14), "Cancel", cmCancel, bfNormal));
+    dialog->insert(new TLabel(TRect(3, 15, 32, 16), "Default file e~x~tension", extension));
+    dialog->insert(new TButton(TRect(48, 16, 58, 18), "O~K~", cmOK, bfDefault));
+    dialog->insert(new TButton(TRect(61, 16, 72, 18), "Cancel", cmCancel, bfNormal));
     dialog->selectNext(False);
     return dialog;
 }
@@ -562,6 +664,7 @@ private:
     void editRunDirectory();
     void changeDirectory();
     void editEnvironment();
+    void editColors();
     bool activateProject(const std::filesystem::path &file, bool showWindow = true);
     void closeUnusedUntitledEditors();
     bool saveDesktopSession();
@@ -1069,6 +1172,7 @@ TurboIDEApp::TurboIDEApp()
                 &TurboIDEApp::initMenuBar,
                 &TurboIDEApp::initDeskTop) {
     disableCommand(cmRedo);
+    disableCommand(cmNotReady);
     TEditor::editorDialog = editDialog;
     SetConsoleCtrlHandler(handleBuildControlEvent, TRUE);
     ideScreenBuffer_ = CreateFileW(L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
@@ -1084,6 +1188,10 @@ TurboIDEApp::TurboIDEApp()
     if (ideScreenBuffer_ != INVALID_HANDLE_VALUE)
         userScreenBuffer_ = createUserScreenBuffer(ideScreenBuffer_);
     loadSettings(settings_);
+    if (settings_.backupFiles)
+        TEditor::editorFlags |= efBackupFiles;
+    else
+        TEditor::editorFlags &= ~efBackupFiles;
     setDefaultPersistentBlocks(settings_.persistentBlocks);
     TEditor::tabSize = settings_.tabSize;
     std::error_code directoryError;
@@ -1728,16 +1836,17 @@ void TurboIDEApp::changeDirectory() {
 void TurboIDEApp::editEnvironment() {
     TInputLine *tabs = nullptr;
     TInputLine *extensionInput = nullptr;
-    TCheckBoxes *persistentBlocks = nullptr;
-    TDialog *dialog = createEditorDialog(tabs, extensionInput, persistentBlocks);
+    TCheckBoxes *options = nullptr;
+    TDialog *dialog = createEditorDialog(tabs, extensionInput, options);
     char tabValue[4]{};
     char extensionValue[16]{};
-    ushort persistentValue = settings_.persistentBlocks ? 1 : 0;
+    ushort optionsValue = (settings_.backupFiles ? 1 : 0) |
+        (settings_.persistentBlocks ? 1 << 8 : 0);
     std::snprintf(tabValue, sizeof(tabValue), "%d", settings_.tabSize);
     std::snprintf(extensionValue, sizeof(extensionValue), "%s", settings_.defaultExtension.c_str());
     tabs->setData(tabValue);
     extensionInput->setData(extensionValue);
-    persistentBlocks->setData(&persistentValue);
+    options->setData(&optionsValue);
     TView *validDialog = TProgram::application->validView(dialog);
     if (!validDialog)
         return;
@@ -1745,7 +1854,7 @@ void TurboIDEApp::editEnvironment() {
     if (result != cmCancel) {
         tabs->getData(tabValue);
         extensionInput->getData(extensionValue);
-        persistentBlocks->getData(&persistentValue);
+        options->getData(&optionsValue);
     }
     TObject::destroy(validDialog);
     if (result == cmCancel)
@@ -1765,14 +1874,60 @@ void TurboIDEApp::editEnvironment() {
     }
     if (extension[0] != '.') extension.insert(extension.begin(), '.');
     settings_.tabSize = tabSize;
-    settings_.persistentBlocks = persistentValue != 0;
+    settings_.backupFiles = (optionsValue & 1) != 0;
+    settings_.persistentBlocks = (optionsValue & (1 << 8)) != 0;
     settings_.defaultExtension = std::move(extension);
+    if (settings_.backupFiles)
+        TEditor::editorFlags |= efBackupFiles;
+    else
+        TEditor::editorFlags &= ~efBackupFiles;
     setDefaultPersistentBlocks(settings_.persistentBlocks);
     TEditor::tabSize = tabSize;
     saveSettings(settings_);
     for (TView *view = deskTop->first(); view; view = view->nextView())
         if (auto *window = dynamic_cast<TEditWindow *>(view))
             setEditorPersistentBlocks(window->editor, settings_.persistentBlocks);
+}
+
+void TurboIDEApp::editColors() {
+    TColorGroup &groups =
+        *new TColorGroup("Desktop") +
+            *new TColorItem("Color", 1) +
+        *new TColorGroup("Menus") +
+            *new TColorItem("Normal", 2) +
+            *new TColorItem("Disabled", 3) +
+            *new TColorItem("Shortcut", 4) +
+            *new TColorItem("Selected", 5) +
+            *new TColorItem("Selected disabled", 6) +
+            *new TColorItem("Shortcut selected", 7) +
+        *new TColorGroup("Windows") +
+            *new TColorItem("Frame passive", 8) +
+            *new TColorItem("Frame active", 9) +
+            *new TColorItem("Frame icons", 10) +
+            *new TColorItem("Scroll bar page", 11) +
+            *new TColorItem("Scroll bar icons", 12) +
+            *new TColorItem("Text", 13) +
+        *new TColorGroup("Dialogs") +
+            *new TColorItem("Frame/background", 33) +
+            *new TColorItem("Frame icons", 34) +
+            *new TColorItem("Static text", 37) +
+            *new TColorItem("Button normal", 41) +
+            *new TColorItem("Button selected", 43) +
+            *new TColorItem("Input normal", 50) +
+            *new TColorItem("Input selected", 51) +
+            *new TColorItem("List normal", 57) +
+            *new TColorItem("List selected", 59);
+    auto *dialog = new TColorDialog(&ideTheme().application, &groups);
+    dialog->helpCtx = hcEnvironmentColors;
+    TView *validDialog = TProgram::application->validView(dialog);
+    if (!validDialog)
+        return;
+    const ushort result = deskTop->execView(validDialog);
+    if (result == cmOK) {
+        ideTheme().application = *dialog->pal;
+        setScreenMode(TScreen::screenMode);
+    }
+    TObject::destroy(validDialog);
 }
 
 void TurboIDEApp::startBuild(BuildRequest request, bool runAfterBuild,
@@ -2651,6 +2806,9 @@ void TurboIDEApp::handleEvent(TEvent &event) {
     case cmEnvironment:
         editEnvironment();
         break;
+    case cmColors:
+        editColors();
+        break;
     case cmExpandPmacro:
     case cmChoosePmacro:
     case cmMatchBracket:
@@ -2719,7 +2877,7 @@ void TurboIDEApp::handleEvent(TEvent &event) {
     case cmAbout:
         showAbout();
         break;
-    case cmNotReady:
+    case cmHelp:
         messageBox("This command will be available in a later stage.", mfInformation | mfOKButton);
         break;
     default:
@@ -2731,14 +2889,14 @@ void TurboIDEApp::handleEvent(TEvent &event) {
 TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
     r.b.y = r.a.y + 1;
     return new IDEMenuBar(r,
-        *new TSubMenu("~F~ile", kbAltF) +
+        *new TSubMenu("~F~ile", kbAltF, hcFileMenu) +
             *new TMenuItem("~N~ew", cmNew, kbCtrlN, hcNoContext, "Ctrl-N") +
             *new TMenuItem("~O~pen...", cmOpen, kbF3, hcNoContext, "F3") +
             *new TMenuItem("~S~ave", cmSave, kbF2, hcNoContext, "F2") +
             *new TMenuItem("Save ~a~s...", cmSaveAs, TKey(kbNoKey)) + newLine() +
             *new TMenuItem("~C~hange dir...", cmChangeDirectory, TKey(kbNoKey)) + newLine() +
             *new TMenuItem("E~x~it", cmQuit, kbAltX, hcNoContext, "Alt-X") +
-        *new TSubMenu("~E~dit", kbAltE) +
+        *new TSubMenu("~E~dit", kbAltE, hcEditMenu) +
             *new TMenuItem("~U~ndo", cmUndo, kbAltBack, hcNoContext, "Alt-Backspace / Ctrl-U") +
             *new TMenuItem("~R~edo", cmRedo,
                 TKey(kbBack, kbAltShift | kbShift), hcNoContext, "Alt+Shift+Backspace") + newLine() +
@@ -2796,21 +2954,21 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
             *new TMenuItem("~R~ecord macro", cmRecordMacro, kbShiftF10, hcNoContext, "Shift-F10") +
             *new TMenuItem("~S~top recording", cmStopMacro, kbAltF10, hcNoContext, "Alt-F10") +
             *new TMenuItem("~P~lay macro", cmPlayMacro, kbCtrlF10, hcNoContext, "Ctrl-F10") +
-        *new TSubMenu("~S~earch", kbAltS) +
+        *new TSubMenu("~S~earch", kbAltS, hcSearchMenu) +
             *new TMenuItem("~F~ind...", cmFind, TKey(kbNoKey)) +
             *new TMenuItem("~R~eplace...", cmReplace, TKey(kbNoKey)) +
             *new TMenuItem("Search ~a~gain", cmSearchAgain, TKey(kbNoKey)) +
-        *new TSubMenu("~R~un", kbAltR) +
+        *new TSubMenu("~R~un", kbAltR, hcRunMenu) +
             *new TMenuItem("~R~un", cmRun, kbCtrlF9, hcNoContext, "Ctrl-F9") +
             *new TMenuItem("User screen", cmUserScreen, kbAltF5, hcNoContext, "Alt-F5") +
             *new TMenuItem("Command prompt...", cmCommandPrompt, TKey(kbNoKey)) +
             *new TMenuItem("Run ~d~irectory...", cmRunDirectory, TKey(kbNoKey)) +
             *new TMenuItem("~P~arameters...", cmRunParameters, TKey(kbNoKey)) +
-        *new TSubMenu("~C~ompile", kbAltC) +
+        *new TSubMenu("~C~ompile", kbAltC, hcCompileMenu) +
             *new TMenuItem("~C~ompile", cmCompile, kbAltF9, hcNoContext, "Alt-F9") +
             *new TMenuItem("~M~ake", cmBuild, kbF9, hcNoContext, "F9") +
             *new TMenuItem("Compiler ~m~essages", cmCompilerMessages, kbF12, hcNoContext, "F12") +
-        *new TSubMenu("~D~ebug", kbAltD) +
+        *new TSubMenu("~D~ebug", kbAltD, hcDebugMenu) +
             *new TMenuItem("~S~tart debugging", cmDebugStart, TKey(kbNoKey)) +
             *new TMenuItem("~C~ontinue", cmDebugContinue, kbF4, hcNoContext, "F4") +
             *new TMenuItem("~T~race into", cmDebugStepInto, kbF7, hcNoContext, "F7") +
@@ -2821,22 +2979,28 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
             *new TMenuItem("Show ~w~atches", cmShowWatches, TKey(kbNoKey)) +
             *new TMenuItem("~A~dd watch...", cmAddWatch, kbCtrlF7, hcNoContext, "Ctrl-F7") +
             *new TMenuItem("~E~valuate watches", cmEvaluateWatches, kbCtrlF4, hcNoContext, "Ctrl-F4") +
-        *new TSubMenu("~P~roject", kbAltP) +
+        *new TSubMenu("~P~roject", kbAltP, hcProjectMenu) +
             *new TMenuItem("New project...", cmNewProject, TKey(kbNoKey)) +
             *new TMenuItem("~O~pen project...", cmOpenProject, TKey(kbNoKey)) +
             *new TMenuItem("~C~lose project", cmProjectClose, TKey(kbNoKey)) + newLine() +
             *new TMenuItem("~A~dd item...", cmProjectAdd, TKey(kbNoKey)) +
             *new TMenuItem("~D~elete item", cmProjectDelete, TKey(kbNoKey)) +
-        *new TSubMenu("~T~ools", kbAltT) +
+        *new TSubMenu("~T~ools", kbAltT, hcToolsMenu) +
             *new TMenuItem("~M~essages", cmShowMessages, kbShiftF11, hcNoContext, "Shift-F11") +
             *new TMenuItem("Goto ~n~ext message", cmNextMessage, kbAltF8, hcNoContext, "Alt-F8") +
             *new TMenuItem("Goto ~p~revious message", cmPrevMessage, kbAltF7, hcNoContext, "Alt-F7") +
-        *new TSubMenu("~O~ptions", kbAltO) +
+        *new TSubMenu("~O~ptions", kbAltO, hcOptionsMenu) +
             *new TMenuItem("~E~nvironment", kbNoKey,
-                new TMenu(*new TMenuItem("~E~ditor...", cmEnvironment, TKey(kbNoKey)))) +
-            *new TMenuItem("~C~ompiler...", cmNotReady, TKey(kbNoKey)) +
-            *new TMenuItem("~D~irectories...", cmNotReady, TKey(kbNoKey)) +
-        *new TSubMenu("~W~indow", kbAltW) +
+                new TMenu(
+                    *disabledMenuItem(new TMenuItem("~P~references...", cmNotReady, TKey(kbNoKey), hcEnvironmentPreferences)) +
+                    *new TMenuItem("~E~ditor...", cmEnvironment, TKey(kbNoKey), hcEnvironmentEditor) +
+                    *disabledMenuItem(new TMenuItem("~M~ouse...", cmNotReady, TKey(kbNoKey), hcEnvironmentMouse)) +
+                    *disabledMenuItem(new TMenuItem("~S~tartup...", cmNotReady, TKey(kbNoKey), hcEnvironmentStartup)) +
+                    *new TMenuItem("~C~olors...", cmColors, TKey(kbNoKey), hcEnvironmentColors)),
+                hcEnvironmentMenu) +
+            *disabledMenuItem(new TMenuItem("~C~ompiler...", cmNotReady, TKey(kbNoKey))) +
+            *disabledMenuItem(new TMenuItem("~D~irectories...", cmNotReady, TKey(kbNoKey))) +
+        *new TSubMenu("~W~indow", kbAltW, hcWindowMenu) +
             *new TMenuItem("~S~ize/move", cmResize, kbCtrlF5, hcNoContext, "Ctrl-F5") +
             *new TMenuItem("~Z~oom", cmZoom, kbF5, hcNoContext, "F5") +
             *new TMenuItem("~T~ile", cmTile, TKey(kbNoKey)) +
@@ -2846,7 +3010,7 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
             *new TMenuItem("Project", cmProjectWindow, kbF11, hcNoContext, "F11") +
             *new TMenuItem("C~l~ose", cmClose, kbAltF3, hcNoContext, "Alt-F3") +
             *new TMenuItem("~L~ist all...", cmWindowList, kbAlt0, hcNoContext, "Alt+0") +
-        *new TSubMenu("~H~elp", kbAltH) +
+        *new TSubMenu("~H~elp", kbAltH, hcHelpMenu) +
             *new TMenuItem("~A~bout", cmAbout, TKey(kbNoKey)));
 }
 
@@ -2854,7 +3018,7 @@ TStatusLine *TurboIDEApp::initStatusLine(TRect r) {
     r.a.y = r.b.y - 1;
     return new IDEStatusLine(r,
         *new TStatusDef(0, 0xFFFF) +
-            *new TStatusItem("~F1~ Help", kbF1, cmNotReady) +
+            *new TStatusItem("~F1~ Help", kbF1, cmHelp) +
             *new TStatusItem("~F7~ Trace", kbF7, cmDebugStepInto) +
             *new TStatusItem("~F8~ Step", kbF8, cmDebugStepOver) +
             *new TStatusItem("~F9~ Make", kbF9, cmBuild) +

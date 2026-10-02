@@ -34,6 +34,8 @@ void loadSettings(IDESettings &settings) {
         if (line.rfind("tab_size=", 0) == 0) {
             try { settings.tabSize = std::clamp(std::stoi(line.substr(9)), 1, 32); }
             catch (...) {}
+        } else if (line.rfind("backup_files=", 0) == 0) {
+            settings.backupFiles = line.substr(13) == "1";
         } else if (line.rfind("persistent_blocks=", 0) == 0) {
             settings.persistentBlocks = line.substr(18) == "1";
         } else if (line.rfind("default_extension=", 0) == 0) {
@@ -54,6 +56,7 @@ void saveSettings(const IDESettings &settings) {
     if (!output)
         return;
     output << "tab_size=" << std::clamp(settings.tabSize, 1, 32) << "\n";
+    output << "backup_files=" << (settings.backupFiles ? 1 : 0) << "\n";
     output << "persistent_blocks=" << (settings.persistentBlocks ? 1 : 0) << "\n";
     output << "default_extension=" << settings.defaultExtension << "\n";
     if (!settings.currentDirectory.empty())
