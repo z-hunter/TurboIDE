@@ -94,6 +94,16 @@ public:
           persistentBlocks_(defaultPersistentBlocks) {}
 
     void handleEvent(TEvent &event) override {
+        if (startsMouseSelection(event)) {
+            discardSelectionAnchor();
+            shiftSelectionActive_ = false;
+        } else if (isShiftNavigation(event)) {
+            if (!shiftSelectionActive_)
+                discardSelectionAnchor();
+            shiftSelectionActive_ = true;
+        } else {
+            shiftSelectionActive_ = false;
+        }
         if (replaceClipboardSelection_) {
             if (event.what == evKeyDown && (event.keyDown.controlKeyState & kbPaste) &&
                 event.keyDown.textLength > 0) {
@@ -351,7 +361,9 @@ public:
     bool persistentBlocks() const { return persistentBlocks_; }
 
     void moveCaret(uint position) {
-        if (persistentBlocks_ && hasSelection()) {
+        if (selecting) {
+            setCurPtr(position, smExtend);
+        } else if (persistentBlocks_ && hasSelection()) {
             const uint start = selStart, end = selEnd;
             setCurPtr(position, 0);
             selStart = start;
@@ -556,18 +568,15 @@ private:
     }
 
     void beginBlock() {
-        blockStart_ = curPtr;
-        blockSelecting_ = true;
         blockHidden_ = false;
         setSelect(curPtr, curPtr, False);
+        selecting = True;
     }
 
     void endBlock() {
-        if (!blockSelecting_)
+        if (!selecting)
             return;
-        setSelect(std::min(blockStart_, curPtr), std::max(blockStart_, curPtr),
-                  Boolean(curPtr < blockStart_));
-        blockSelecting_ = false;
+        selecting = False;
         blockHidden_ = false;
     }
 
@@ -826,6 +835,33 @@ private:
         return event.what == evKeyDown && (event.keyDown.controlKeyState & kbShift);
     }
 
+    bool isShiftNavigation(const TEvent &event) const {
+        if (event.what != evKeyDown)
+            return false;
+        const TKey key(event.keyDown);
+        if (!(key.mods & kbShift))
+            return false;
+        switch (key.code) {
+        case kbLeft: case kbRight: case kbUp: case kbDown:
+        case kbHome: case kbEnd: case kbPgUp: case kbPgDn:
+        case kbCtrlLeft: case kbCtrlRight: case kbCtrlHome: case kbCtrlEnd:
+        case kbCtrlPgUp: case kbCtrlPgDn:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    bool startsMouseSelection(const TEvent &event) const {
+        return event.what == evMouseDown && (event.mouse.buttons & mbLeftButton);
+    }
+
+    void discardSelectionAnchor() {
+        blockHidden_ = false;
+        selecting = False;
+        setSelect(curPtr, curPtr, False);
+    }
+
     void handleBaseEvent(TEvent &event) {
         const bool copyCommand = (event.what == evCommand && event.message.command == cmCopy) ||
             (event.what == evKeyDown && event.keyDown.keyCode == kbCtrlIns);
@@ -841,7 +877,8 @@ private:
             TFileEditor::handleEvent(event);
             return;
         }
-        if (!persistentBlocks_ || !hasSelection() || copyCommand || isShiftSelection(event) || (event.what == evCommand &&
+        if (selecting || startsMouseSelection(event) || !persistentBlocks_ || !hasSelection() || copyCommand ||
+            isShiftSelection(event) || (event.what == evCommand &&
             (event.message.command == cmSelectAll || event.message.command == cmStartSelect))) {
             TFileEditor::handleEvent(event);
             return;
@@ -1439,11 +1476,10 @@ private:
     std::string rectClipboard_;
     uint marks_[10]{};
     bool markSet_[10]{};
-    uint blockStart_ = 0;
     uint lastCursor_ = 0;
     int prefixMode_ = 0;
     int prefixPage_ = 0;
-    bool blockSelecting_ = false;
+    bool shiftSelectionActive_ = false;
     bool persistentBlocks_ = false;
     bool blockHidden_ = false;
     bool replaceClipboardSelection_ = false;
