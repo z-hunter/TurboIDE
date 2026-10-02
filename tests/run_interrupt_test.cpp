@@ -22,6 +22,9 @@ int wmain(int argc, wchar_t **argv) {
     DWORD mode = 0;
     if (output == INVALID_HANDLE_VALUE || input == INVALID_HANDLE_VALUE || !GetConsoleMode(input, &mode))
         return 11;
+    HANDLE userScreen = createUserScreenBuffer(output);
+    if (userScreen == INVALID_HANDLE_VALUE)
+        return 11;
     SetConsoleMode(input, mode & ~ENABLE_PROCESSED_INPUT);
 
     const auto self = std::filesystem::absolute(argv[0]);
@@ -43,7 +46,8 @@ int wmain(int argc, wchar_t **argv) {
     });
 
     const auto started = std::chrono::steady_clock::now();
-    const RunResult result = runProgram({self, self.parent_path(), {L"--child"}}, output, input);
+    const RunResult result = runProgram({self, self.parent_path(), {L"--child"}},
+                                        userScreen, output, input);
     inject.join();
     SetEvent(done);
     watchdog.join();
@@ -52,6 +56,7 @@ int wmain(int argc, wchar_t **argv) {
     SetConsoleMode(input, mode);
     CloseHandle(input);
     CloseHandle(output);
+    CloseHandle(userScreen);
     FreeConsole();
     return result.started && result.exitCode != STILL_ACTIVE &&
         elapsed < std::chrono::seconds(4) ? 0 : 12;

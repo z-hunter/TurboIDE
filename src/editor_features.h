@@ -32,6 +32,11 @@ constexpr ushort cmMenuRectCut = 167;
 constexpr ushort cmMenuRectToggleMovePaste = 168;
 constexpr ushort cmMenuRectDuplicate = 169;
 constexpr ushort cmMenuBlockStart = 170;
+constexpr ushort cmMenuReplaceSelect = 171;
+constexpr ushort cmMenuHideBlock = 172;
+constexpr ushort cmMenuCopyBlock = 173;
+constexpr ushort cmMenuInvertCase = 174;
+constexpr ushort cmMenuAlternateCase = 175;
 
 bool runEditorFeature(TFileEditor *editor, ushort command);
 bool isEditorFeatureRecording(TFileEditor *editor);

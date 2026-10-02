@@ -36,6 +36,10 @@ void setEditorDebugState(TFileEditor *editor, const std::vector<int> &breakpoint
 void setEditorPrefixHint(TFileEditor *editor, int mode);
 void advanceEditorPrefixHintPage(TFileEditor *editor);
 bool editorSupportsPrefixKeys(TFileEditor *editor);
+void setDefaultPersistentBlocks(bool enabled);
+void setEditorPersistentBlocks(TFileEditor *editor, bool enabled);
+bool editorPersistentBlocks(TFileEditor *editor);
+void moveEditorCursor(TFileEditor *editor, uint position);
 
 class SyntaxEditWindow : public TEditWindow {
 public:

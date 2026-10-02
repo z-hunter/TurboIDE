@@ -223,7 +223,7 @@ private:
                     "~H~:DelB", "~L~:Len", "~M~:Macro", "~P~:Prev", "~R~:Top",
                     "~S~:BOL", "~X~:PgDn", "~Y~:DelE", "~[ / ]~:Match",
                     "~0-9~:Goto", "~Esc~:Exit"};
-        return {"~B~:Start", "~K~:End", "~C~:Copy", "~H~:Hide", "~I~:Ind",
+        return {"~B~:Start", "~K~:End", "~C~:Dup", "~H~:Hide", "~I~:Ind1",
                 "~L~:Line", "~M~:Upper", "~O~:Lower", "~R~:Read", "~T~:Word",
                 "~U~:Unind", "~V~:Move", "~W~:Write", "~Y~:Cut", "~0-9~:Mark",
                 "~Tab~:Ind", "~Sh+B/C/E/H/K/L/M/O/P/T/V~:Rect", "~Sh+A~:Toggle",
@@ -355,17 +355,21 @@ TDialog *createSingleInputDialog(const char *title, const char *label, unsigned 
     return dialog;
 }
 
-TDialog *createEditorDialog() {
-    auto *dialog = new TDialog(TRect(0, 0, 50, 13), "Editor");
+TDialog *createEditorDialog(TInputLine *&tabs, TInputLine *&extension,
+                            TCheckBoxes *&persistentBlocks) {
+    auto *dialog = new TDialog(TRect(0, 0, 50, 15), "Editor");
     dialog->options |= ofCentered;
-    auto *tabs = new TInputLine(TRect(3, 3, 8, 4), 3);
+    tabs = new TInputLine(TRect(3, 3, 8, 4), 3);
     dialog->insert(tabs);
     dialog->insert(new TLabel(TRect(3, 2, 24, 3), "~T~ab size (1-32)", tabs));
-    auto *extension = new TInputLine(TRect(3, 7, 18, 8), 15);
+    extension = new TInputLine(TRect(3, 7, 18, 8), 15);
     dialog->insert(extension);
     dialog->insert(new TLabel(TRect(3, 6, 32, 7), "Default file e~x~tension", extension));
-    dialog->insert(new TButton(TRect(22, 10, 32, 12), "O~K~", cmOK, bfDefault));
-    dialog->insert(new TButton(TRect(35, 10, 45, 12), "Cancel", cmCancel, bfNormal));
+    persistentBlocks = new TCheckBoxes(TRect(3, 9, 40, 11),
+                                       new TSItem("~P~ersistent blocks", nullptr));
+    dialog->insert(persistentBlocks);
+    dialog->insert(new TButton(TRect(22, 12, 32, 14), "O~K~", cmOK, bfDefault));
+    dialog->insert(new TButton(TRect(35, 12, 45, 14), "Cancel", cmCancel, bfNormal));
     dialog->selectNext(False);
     return dialog;
 }
@@ -1079,15 +1083,16 @@ TurboIDEApp::TurboIDEApp()
     }
     if (ideScreenBuffer_ != INVALID_HANDLE_VALUE)
         userScreenBuffer_ = createUserScreenBuffer(ideScreenBuffer_);
-    openEditor(nullptr);
     loadSettings(settings_);
+    setDefaultPersistentBlocks(settings_.persistentBlocks);
+    TEditor::tabSize = settings_.tabSize;
     std::error_code directoryError;
     if (!settings_.currentDirectory.empty())
         std::filesystem::current_path(settings_.currentDirectory, directoryError);
     if (directoryError)
         directoryError.clear();
     settings_.currentDirectory = std::filesystem::current_path(directoryError);
-    TEditor::tabSize = settings_.tabSize;
+    openEditor(nullptr);
     if (!settings_.lastProject.empty() &&
         _wcsicmp(settings_.lastProject.extension().c_str(), L".prj") == 0 &&
         std::filesystem::exists(settings_.lastProject))
@@ -1403,7 +1408,7 @@ void TurboIDEApp::restoreDesktopSession() {
         position = window->editor->lineStart(position);
         for (int column = 1; column < saved.column && position < window->editor->lineEnd(position); ++column)
             position = window->editor->nextChar(position);
-        window->editor->setCurPtr(position, 0);
+        moveEditorCursor(window->editor, position);
         if (_wcsicmp(file.c_str(), session.activeFile.c_str()) == 0) active = window;
     }
     if (active) {
@@ -1721,18 +1726,38 @@ void TurboIDEApp::changeDirectory() {
 }
 
 void TurboIDEApp::editEnvironment() {
-    struct EditorOptions { char tabs[4]{}; char extension[16]{}; } options;
-    std::snprintf(options.tabs, sizeof(options.tabs), "%d", settings_.tabSize);
-    std::snprintf(options.extension, sizeof(options.extension), "%s", settings_.defaultExtension.c_str());
-    if (execDialog(createEditorDialog(), &options) != cmOK)
+    TInputLine *tabs = nullptr;
+    TInputLine *extensionInput = nullptr;
+    TCheckBoxes *persistentBlocks = nullptr;
+    TDialog *dialog = createEditorDialog(tabs, extensionInput, persistentBlocks);
+    char tabValue[4]{};
+    char extensionValue[16]{};
+    ushort persistentValue = settings_.persistentBlocks ? 1 : 0;
+    std::snprintf(tabValue, sizeof(tabValue), "%d", settings_.tabSize);
+    std::snprintf(extensionValue, sizeof(extensionValue), "%s", settings_.defaultExtension.c_str());
+    tabs->setData(tabValue);
+    extensionInput->setData(extensionValue);
+    persistentBlocks->setData(&persistentValue);
+    TView *validDialog = TProgram::application->validView(dialog);
+    if (!validDialog)
         return;
+    const ushort result = TProgram::deskTop->execView(validDialog);
+    if (result != cmCancel) {
+        tabs->getData(tabValue);
+        extensionInput->getData(extensionValue);
+        persistentBlocks->getData(&persistentValue);
+    }
+    TObject::destroy(validDialog);
+    if (result == cmCancel)
+        return;
+
     int tabSize = 0;
-    try { tabSize = std::stoi(options.tabs); } catch (...) {}
+    try { tabSize = std::stoi(tabValue); } catch (...) {}
     if (tabSize < 1 || tabSize > 32) {
         messageBox("Tab size must be between 1 and 32.", mfError | mfOKButton);
         return;
     }
-    std::string extension = options.extension;
+    std::string extension = extensionValue;
     if (extension.empty() || extension.size() > 15 ||
         extension.find_first_of("\\/:*?\"<>|") != std::string::npos) {
         messageBox("Enter a valid file extension, for example .c.", mfError | mfOKButton);
@@ -1740,12 +1765,14 @@ void TurboIDEApp::editEnvironment() {
     }
     if (extension[0] != '.') extension.insert(extension.begin(), '.');
     settings_.tabSize = tabSize;
+    settings_.persistentBlocks = persistentValue != 0;
     settings_.defaultExtension = std::move(extension);
+    setDefaultPersistentBlocks(settings_.persistentBlocks);
     TEditor::tabSize = tabSize;
     saveSettings(settings_);
     for (TView *view = deskTop->first(); view; view = view->nextView())
         if (auto *window = dynamic_cast<TEditWindow *>(view))
-            window->editor->drawView();
+            setEditorPersistentBlocks(window->editor, settings_.persistentBlocks);
 }
 
 void TurboIDEApp::startBuild(BuildRequest request, bool runAfterBuild,
@@ -1937,6 +1964,8 @@ void TurboIDEApp::syncEditMenuState() {
         cmExpandPmacro, cmMatchBracket, cmRecordMacro, cmStopMacro, cmPlayMacro,
         cmMenuBlockStart,
         cmChoosePmacro, cmMenuBlockEnd, cmMenuSelectLine, cmMenuSelectWord,
+        cmMenuReplaceSelect, cmMenuHideBlock, cmMenuCopyBlock,
+        cmMenuInvertCase, cmMenuAlternateCase,
         cmMenuIndentBlock, cmMenuUnindentBlock, cmMenuUpperCase, cmMenuLowerCase,
         cmMenuReadBlock, cmMenuMoveBlock, cmMenuWriteBlock, cmMenuRectStart,
         cmMenuRectEnd, cmMenuRectCopy, cmMenuRectDelete,
@@ -1953,6 +1982,24 @@ void TurboIDEApp::syncEditMenuState() {
     }
     for (ushort command : featureCommands) {
         if (supportsSyntaxCommands) enableCommand(command);
+        else disableCommand(command);
+    }
+    const bool persistentBlocks = supportsSyntaxCommands && editorPersistentBlocks(window->editor);
+    const bool hasSelection = hasEditor && window->editor->hasSelection();
+    if (persistentBlocks && hasSelection) {
+        enableCommand(cmMenuCopyBlock);
+        enableCommand(cmMenuMoveBlock);
+    } else {
+        disableCommand(cmMenuCopyBlock);
+        disableCommand(cmMenuMoveBlock);
+    }
+    const ushort selectionCommands[] = {
+        cmMenuReplaceSelect, cmMenuHideBlock, cmMenuIndentBlock, cmMenuUnindentBlock,
+        cmMenuUpperCase, cmMenuLowerCase, cmMenuInvertCase, cmMenuAlternateCase,
+        cmMenuWriteBlock
+    };
+    for (ushort command : selectionCommands) {
+        if (supportsSyntaxCommands && hasSelection) enableCommand(command);
         else disableCommand(command);
     }
 }
@@ -1976,7 +2023,7 @@ void TurboIDEApp::goToLine() {
     uint position = 0;
     for (long line = 1; line < requested && position < editor->bufLen; ++line)
         position = editor->nextLine(position);
-    editor->setCurPtr(editor->lineStart(position), 0);
+    moveEditorCursor(editor, editor->lineStart(position));
     editor->trackCursor(True);
 }
 
@@ -2472,7 +2519,7 @@ bool TurboIDEApp::goToLocation(const std::filesystem::path &file, int line, int 
     position = editorWindow->editor->lineStart(position);
     if (column > 1)
         position = std::min<uint>(editorWindow->editor->bufLen, position + static_cast<uint>(column - 1));
-    editorWindow->editor->setCurPtr(position, 0);
+    moveEditorCursor(editorWindow->editor, position);
     editorWindow->editor->trackCursor(True);
     setEditorDiagnostic(editorWindow->editor, line);
     return true;
@@ -2612,6 +2659,11 @@ void TurboIDEApp::handleEvent(TEvent &event) {
     case cmPlayMacro:
     case cmMenuBlockEnd:
     case cmMenuBlockStart:
+    case cmMenuReplaceSelect:
+    case cmMenuHideBlock:
+    case cmMenuCopyBlock:
+    case cmMenuInvertCase:
+    case cmMenuAlternateCase:
     case cmMenuSelectLine:
     case cmMenuSelectWord:
     case cmMenuIndentBlock:
@@ -2634,7 +2686,7 @@ void TurboIDEApp::handleEvent(TEvent &event) {
     case cmMenuRectDuplicate: {
         TEditWindow *window = currentEditorWindow();
         if (!window || !runEditorFeature(window->editor, event.message.command))
-            messageBox("This editor command is available for C and C++ files.",
+            messageBox("This command requires an open editor.",
                        mfInformation | mfOKButton);
         break;
     }
@@ -2683,8 +2735,8 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
             *new TMenuItem("~N~ew", cmNew, kbCtrlN, hcNoContext, "Ctrl-N") +
             *new TMenuItem("~O~pen...", cmOpen, kbF3, hcNoContext, "F3") +
             *new TMenuItem("~S~ave", cmSave, kbF2, hcNoContext, "F2") +
-            *new TMenuItem("Save ~a~s...", cmSaveAs, kbNoKey) + newLine() +
-            *new TMenuItem("~C~hange dir...", cmChangeDirectory, kbNoKey) + newLine() +
+            *new TMenuItem("Save ~a~s...", cmSaveAs, TKey(kbNoKey)) + newLine() +
+            *new TMenuItem("~C~hange dir...", cmChangeDirectory, TKey(kbNoKey)) + newLine() +
             *new TMenuItem("E~x~it", cmQuit, kbAltX, hcNoContext, "Alt-X") +
         *new TSubMenu("~E~dit", kbAltE) +
             *new TMenuItem("~U~ndo", cmUndo, kbAltBack, hcNoContext, "Alt-Backspace / Ctrl-U") +
@@ -2703,10 +2755,6 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
                           *new TMenuItem("Character left", cmCharLeft, kbNoKey, hcNoContext, "Ctrl-S") +
                           *new TMenuItem("Line down", cmLineDown, kbNoKey, hcNoContext, "Ctrl-X") + newLine() +
                           *new TMenuItem("Word left", cmWordLeft, kbNoKey, hcNoContext, "Ctrl-Left") +
-                          *new TMenuItem("Line start", cmLineStart, kbNoKey, hcNoContext, "Home") +
-                          *new TMenuItem("Line end", cmLineEnd, kbNoKey, hcNoContext, "End") +
-                          *new TMenuItem("File start", cmTextStart, kbNoKey, hcNoContext, "Ctrl-Home") +
-                          *new TMenuItem("File end", cmTextEnd, kbNoKey, hcNoContext, "Ctrl-End") + newLine() +
                           *new TMenuItem("Go to line...", cmGoToLine, kbNoKey, hcNoContext, "Ctrl-J") +
                           *new TMenuItem("Match bracket", cmMatchBracket, kbNoKey, hcNoContext,
                                          "Alt+[ / Alt+]"))) +
@@ -2721,94 +2769,85 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
                           *new TMenuItem("To line end", cmDelEnd, kbNoKey, hcNoContext, "Ctrl+Shift+Y") +
                           *new TMenuItem("Selection", cmClear, kbNoKey, hcNoContext, "Ctrl-Del"))) +
             *new TMenuItem("~I~nsert", kbNoKey,
-                new TMenu(*new TMenuItem("Tab", cmMenuInsertTab, kbNoKey, hcNoContext, "Ctrl-I") +
-                          *new TMenuItem("New line", cmNewLine, kbNoKey, hcNoContext, "Ctrl-M") +
+                new TMenu(*new TMenuItem("New line", cmNewLine, kbNoKey, hcNoContext, "Ctrl-M") +
                           *new TMenuItem("Toggle insert/overwrite", cmInsMode, kbNoKey, hcNoContext, "Ctrl-V") +
                           *new TMenuItem("Toggle auto indent", cmIndentMode, kbNoKey, hcNoContext, "Ctrl-O") + newLine() +
                           *new TMenuItem("Expand snippet", cmExpandPmacro, kbNoKey, hcNoContext, "Ctrl-P") +
-                          *new TMenuItem("Choose snippet...", cmChoosePmacro, kbNoKey))) +
+                          *new TMenuItem("Choose snippet...", cmChoosePmacro, TKey(kbNoKey)))) +
             *new TMenuItem("Se~l~ection", kbNoKey,
                 new TMenu(*new TMenuItem("Select all", cmSelectAll, kbNoKey, hcNoContext, "Ctrl-A") + newLine() +
                           *new TMenuItem("Start block", cmMenuBlockStart, kbNoKey, hcNoContext, "Ctrl+Shift+B") +
                           *new TMenuItem("End block", cmMenuBlockEnd, kbNoKey, hcNoContext, "Ctrl+Shift+K") +
-                          *new TMenuItem("Copy block", cmCopy, kbNoKey, hcNoContext, "Ctrl+Shift+C") +
-                          *new TMenuItem("Hide block", cmHideSelect, kbNoKey, hcNoContext, "Ctrl+Shift+H") +
+                          *new TMenuItem("Copy block to clipboard", cmCopy, kbNoKey, hcNoContext, "Ctrl+Shift+C") +
+                          *new TMenuItem("Hide/show block", cmMenuHideBlock, kbNoKey, hcNoContext, "Ctrl+Shift+H") +
                           *new TMenuItem("Cut block", cmCut, kbNoKey, hcNoContext, "Ctrl+Shift+X") +
+                          *new TMenuItem("Duplicate block", cmMenuCopyBlock, kbNoKey, hcNoContext, "Ctrl-K, C") +
                           *new TMenuItem("Select line", cmMenuSelectLine, kbNoKey, hcNoContext, "Ctrl+Shift+L") +
                           *new TMenuItem("Select word", cmMenuSelectWord, kbNoKey, hcNoContext, "Ctrl+Shift+T") + newLine() +
                           *new TMenuItem("Indent block", cmMenuIndentBlock, kbNoKey, hcNoContext, "Ctrl+Shift+I") +
                           *new TMenuItem("Unindent block", cmMenuUnindentBlock, kbNoKey, hcNoContext, "Ctrl+Shift+U") +
                           *new TMenuItem("Uppercase selection", cmMenuUpperCase, kbNoKey, hcNoContext, "Ctrl+Shift+M") +
                           *new TMenuItem("Lowercase selection", cmMenuLowerCase, kbNoKey, hcNoContext, "Ctrl+Shift+O") +
-                          *new TMenuItem("Move block", cmMenuMoveBlock, kbNoKey, hcNoContext, "Ctrl+Shift+V") +
+                          *new TMenuItem("Invert case", cmMenuInvertCase, TKey(kbNoKey)) +
+                          *new TMenuItem("Replace block from clipboard", cmMenuReplaceSelect, kbNoKey,
+                                         hcNoContext, "Ctrl+Shift+Ins") +
                           *new TMenuItem("Read block...", cmMenuReadBlock, kbNoKey, hcNoContext, "Ctrl+Shift+R") +
-                          *new TMenuItem("Write block...", cmMenuWriteBlock, kbNoKey, hcNoContext, "Ctrl+Shift+W") + newLine() +
-                          *new TMenuItem("Start rectangle", cmMenuRectStart, kbNoKey, hcNoContext, "Ctrl+Alt+B") +
-                          *new TMenuItem("End rectangle", cmMenuRectEnd, kbNoKey, hcNoContext, "Ctrl+Alt+K") +
-                          *new TMenuItem("Copy rectangle", cmMenuRectCopy, kbNoKey, hcNoContext, "Ctrl+Alt+C") +
-                          *new TMenuItem("Cut rectangle", cmMenuRectCut, kbNoKey, hcNoContext, "Ctrl+Alt+T") +
-                          *new TMenuItem("Delete rectangle", cmMenuRectDelete, kbNoKey, hcNoContext, "Ctrl+Alt+L") +
-                          *new TMenuItem("Clear rectangle", cmMenuRectClear, kbNoKey, hcNoContext, "Ctrl+Alt+E") +
-                          *new TMenuItem("Hide rectangle", cmMenuRectHide, kbNoKey, hcNoContext, "Ctrl+Alt+H") +
-                          *new TMenuItem("Move rectangle", cmMenuRectMove, kbNoKey, hcNoContext, "Ctrl+Alt+M") +
-                          *new TMenuItem("Paste rectangle", cmMenuRectPaste, kbNoKey, hcNoContext, "Ctrl+Alt+P") +
-                          *new TMenuItem("Duplicate rectangle", cmMenuRectDuplicate, kbNoKey, hcNoContext, "Ctrl+Alt+O") +
-                          *new TMenuItem("Toggle move on paste", cmMenuRectToggleMovePaste, kbNoKey, hcNoContext, "Ctrl+Alt+A"))) + newLine() +
+                          *new TMenuItem("Write block...", cmMenuWriteBlock, kbNoKey, hcNoContext, "Ctrl+Shift+W"))) + newLine() +
             *new TMenuItem("~R~ecord macro", cmRecordMacro, kbShiftF10, hcNoContext, "Shift-F10") +
             *new TMenuItem("~S~top recording", cmStopMacro, kbAltF10, hcNoContext, "Alt-F10") +
             *new TMenuItem("~P~lay macro", cmPlayMacro, kbCtrlF10, hcNoContext, "Ctrl-F10") +
         *new TSubMenu("~S~earch", kbAltS) +
-            *new TMenuItem("~F~ind...", cmFind, kbNoKey) +
-            *new TMenuItem("~R~eplace...", cmReplace, kbNoKey) +
-            *new TMenuItem("Search ~a~gain", cmSearchAgain, kbNoKey) +
+            *new TMenuItem("~F~ind...", cmFind, TKey(kbNoKey)) +
+            *new TMenuItem("~R~eplace...", cmReplace, TKey(kbNoKey)) +
+            *new TMenuItem("Search ~a~gain", cmSearchAgain, TKey(kbNoKey)) +
         *new TSubMenu("~R~un", kbAltR) +
             *new TMenuItem("~R~un", cmRun, kbCtrlF9, hcNoContext, "Ctrl-F9") +
             *new TMenuItem("User screen", cmUserScreen, kbAltF5, hcNoContext, "Alt-F5") +
-            *new TMenuItem("Command prompt...", cmCommandPrompt, kbNoKey) +
-            *new TMenuItem("Run ~d~irectory...", cmRunDirectory, kbNoKey) +
-            *new TMenuItem("~P~arameters...", cmRunParameters, kbNoKey) +
+            *new TMenuItem("Command prompt...", cmCommandPrompt, TKey(kbNoKey)) +
+            *new TMenuItem("Run ~d~irectory...", cmRunDirectory, TKey(kbNoKey)) +
+            *new TMenuItem("~P~arameters...", cmRunParameters, TKey(kbNoKey)) +
         *new TSubMenu("~C~ompile", kbAltC) +
             *new TMenuItem("~C~ompile", cmCompile, kbAltF9, hcNoContext, "Alt-F9") +
             *new TMenuItem("~M~ake", cmBuild, kbF9, hcNoContext, "F9") +
             *new TMenuItem("Compiler ~m~essages", cmCompilerMessages, kbF12, hcNoContext, "F12") +
         *new TSubMenu("~D~ebug", kbAltD) +
-            *new TMenuItem("~S~tart debugging", cmDebugStart, kbNoKey) +
+            *new TMenuItem("~S~tart debugging", cmDebugStart, TKey(kbNoKey)) +
             *new TMenuItem("~C~ontinue", cmDebugContinue, kbF4, hcNoContext, "F4") +
             *new TMenuItem("~T~race into", cmDebugStepInto, kbF7, hcNoContext, "F7") +
             *new TMenuItem("Step ~o~ver", cmDebugStepOver, kbF8, hcNoContext, "F8") +
             *new TMenuItem("Toggle ~b~reakpoint", cmDebugToggleBreakpoint, kbCtrlF8, hcNoContext, "Ctrl-F8") +
             *new TMenuItem("~S~top debugging", cmDebugStop, kbCtrlF2, hcNoContext, "Ctrl-F2") +
-            *new TMenuItem("Show ~l~ocals", cmShowLocals, kbNoKey) +
-            *new TMenuItem("Show ~w~atches", cmShowWatches, kbNoKey) +
+            *new TMenuItem("Show ~l~ocals", cmShowLocals, TKey(kbNoKey)) +
+            *new TMenuItem("Show ~w~atches", cmShowWatches, TKey(kbNoKey)) +
             *new TMenuItem("~A~dd watch...", cmAddWatch, kbCtrlF7, hcNoContext, "Ctrl-F7") +
             *new TMenuItem("~E~valuate watches", cmEvaluateWatches, kbCtrlF4, hcNoContext, "Ctrl-F4") +
         *new TSubMenu("~P~roject", kbAltP) +
-            *new TMenuItem("New project...", cmNewProject, kbNoKey) +
-            *new TMenuItem("~O~pen project...", cmOpenProject, kbNoKey) +
-            *new TMenuItem("~C~lose project", cmProjectClose, kbNoKey) + newLine() +
-            *new TMenuItem("~A~dd item...", cmProjectAdd, kbNoKey) +
-            *new TMenuItem("~D~elete item", cmProjectDelete, kbNoKey) +
+            *new TMenuItem("New project...", cmNewProject, TKey(kbNoKey)) +
+            *new TMenuItem("~O~pen project...", cmOpenProject, TKey(kbNoKey)) +
+            *new TMenuItem("~C~lose project", cmProjectClose, TKey(kbNoKey)) + newLine() +
+            *new TMenuItem("~A~dd item...", cmProjectAdd, TKey(kbNoKey)) +
+            *new TMenuItem("~D~elete item", cmProjectDelete, TKey(kbNoKey)) +
         *new TSubMenu("~T~ools", kbAltT) +
             *new TMenuItem("~M~essages", cmShowMessages, kbShiftF11, hcNoContext, "Shift-F11") +
             *new TMenuItem("Goto ~n~ext message", cmNextMessage, kbAltF8, hcNoContext, "Alt-F8") +
             *new TMenuItem("Goto ~p~revious message", cmPrevMessage, kbAltF7, hcNoContext, "Alt-F7") +
         *new TSubMenu("~O~ptions", kbAltO) +
             *new TMenuItem("~E~nvironment", kbNoKey,
-                new TMenu(*new TMenuItem("~E~ditor...", cmEnvironment, kbNoKey))) +
-            *new TMenuItem("~C~ompiler...", cmNotReady, kbNoKey) +
-            *new TMenuItem("~D~irectories...", cmNotReady, kbNoKey) +
+                new TMenu(*new TMenuItem("~E~ditor...", cmEnvironment, TKey(kbNoKey)))) +
+            *new TMenuItem("~C~ompiler...", cmNotReady, TKey(kbNoKey)) +
+            *new TMenuItem("~D~irectories...", cmNotReady, TKey(kbNoKey)) +
         *new TSubMenu("~W~indow", kbAltW) +
             *new TMenuItem("~S~ize/move", cmResize, kbCtrlF5, hcNoContext, "Ctrl-F5") +
             *new TMenuItem("~Z~oom", cmZoom, kbF5, hcNoContext, "F5") +
-            *new TMenuItem("~T~ile", cmTile, kbNoKey) +
-            *new TMenuItem("C~a~scade", cmCascade, kbNoKey) +
+            *new TMenuItem("~T~ile", cmTile, TKey(kbNoKey)) +
+            *new TMenuItem("C~a~scade", cmCascade, TKey(kbNoKey)) +
             *new TMenuItem("~N~ext", cmNext, kbF6, hcNoContext, "F6") +
             *new TMenuItem("~P~revious", cmPrev, kbShiftF6, hcNoContext, "Shift-F6") +
             *new TMenuItem("Project", cmProjectWindow, kbF11, hcNoContext, "F11") +
             *new TMenuItem("C~l~ose", cmClose, kbAltF3, hcNoContext, "Alt-F3") +
             *new TMenuItem("~L~ist all...", cmWindowList, kbAlt0, hcNoContext, "Alt+0") +
         *new TSubMenu("~H~elp", kbAltH) +
-            *new TMenuItem("~A~bout", cmAbout, kbNoKey));
+            *new TMenuItem("~A~bout", cmAbout, TKey(kbNoKey)));
 }
 
 TStatusLine *TurboIDEApp::initStatusLine(TRect r) {

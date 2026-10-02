@@ -34,6 +34,8 @@ IDETheme &ideTheme() {
 }
 
 namespace {
+bool defaultPersistentBlocks = true;
+
 enum SyntaxToken : unsigned char {
     tokenNormal,
     tokenKeyword,
@@ -83,12 +85,32 @@ const std::unordered_set<std::string_view> &cppKeywords() {
 }
 
 class SyntaxEditor final : public TFileEditor {
+    enum class SelectionCase { lower, upper, invert, alternate };
+
 public:
     SyntaxEditor(const TRect &bounds, TScrollBar *horizontal, TScrollBar *vertical,
                  TIndicator *indicator, TStringView fileName)
-        : TFileEditor(bounds, horizontal, vertical, indicator, fileName) {}
+        : TFileEditor(bounds, horizontal, vertical, indicator, fileName),
+          persistentBlocks_(defaultPersistentBlocks) {}
 
     void handleEvent(TEvent &event) override {
+        if (replaceClipboardSelection_) {
+            if (event.what == evKeyDown && (event.keyDown.controlKeyState & kbPaste) &&
+                event.keyDown.textLength > 0) {
+                const uint start = selStart, end = selEnd;
+                setCurPtr(end, 0);
+                selStart = start;
+                selEnd = end;
+                insertText(event.keyDown.text, event.keyDown.textLength, False);
+                replaceClipboardSelection_ = false;
+                blockHidden_ = false;
+                clearEvent(event);
+                updateMatchingBracket();
+                return;
+            }
+            if (event.what == evKeyDown && !(event.keyDown.controlKeyState & kbPaste))
+                replaceClipboardSelection_ = false;
+        }
         if (event.what == evKeyDown) {
             if (prefixMode_) {
                 const int mode = prefixMode_;
@@ -112,6 +134,17 @@ public:
                 return;
             }
         }
+        if (event.what == evCommand && event.message.command == cmMenuReplaceSelect) {
+            replaceSelection();
+            clearEvent(event);
+            updateMatchingBracket();
+            return;
+        }
+        if (event.what == evCommand && event.message.command == cmMenuHideBlock) {
+            toggleBlockHidden();
+            clearEvent(event);
+            return;
+        }
         const bool enter = isEnter(event);
         const bool closeBrace = isCloseBrace(event);
         const bool capture = recordable(event);
@@ -133,7 +166,7 @@ public:
             if (insertedDedentedBrace)
                 clearEvent(event);
             else if (!handledDirect)
-                TFileEditor::handleEvent(event);
+                handleBaseEvent(event);
         }
         if (enter && !snippetUndo)
             indentAfterOpenBrace();
@@ -153,7 +186,14 @@ public:
 
     void formatLine(TDrawBuffer &drawBuffer, uint linePtr, int hScroll, int width,
                     TAttrPair colors) override {
+        const uint savedStart = selStart, savedEnd = selEnd;
+        if (blockHidden_)
+            selStart = selEnd = curPtr;
         TFileEditor::formatLine(drawBuffer, linePtr, hScroll, width, colors);
+        if (blockHidden_) {
+            selStart = savedStart;
+            selEnd = savedEnd;
+        }
         ensureTokens();
         const bool breakpointLine = isBreakpointLine(linePtr);
 
@@ -181,7 +221,7 @@ public:
             if (nextPos > hScroll) {
                 const int charWidth = nextPos - std::max(cellPos, hScroll);
                 const unsigned char token = p < tokens_.size() ? tokens_[p] : tokenNormal;
-                const bool selected = selStart <= p && p < selEnd;
+                const bool selected = !blockHidden_ && selStart <= p && p < selEnd;
                 const bool rectSelected = rectangleValid_ && !rectangleHidden_ &&
                     currentLine >= rectTop && currentLine <= rectBottom &&
                     cellPos >= rectLeft && cellPos < rectRight;
@@ -241,7 +281,7 @@ public:
         }
         case cmMatchBracket:
             if (matchingTarget_ != invalidPosition) {
-                setCurPtr(matchingTarget_, 0);
+                moveCaret(matchingTarget_);
                 trackCursor(True);
                 updateMatchingBracket();
                 drawView();
@@ -249,12 +289,17 @@ public:
             return true;
         case cmMenuBlockStart: beginBlock(); return true;
         case cmMenuBlockEnd: endBlock(); return true;
+        case cmMenuHideBlock: toggleBlockHidden(); return true;
+        case cmMenuReplaceSelect: replaceSelection(); return true;
+        case cmMenuCopyBlock: copyBlock(); return true;
         case cmMenuSelectLine: selectLine(); return true;
         case cmMenuSelectWord: selectWord(); return true;
         case cmMenuIndentBlock: indentSelection(1); return true;
         case cmMenuUnindentBlock: indentSelection(-1); return true;
-        case cmMenuUpperCase: changeSelectionCase(true); return true;
-        case cmMenuLowerCase: changeSelectionCase(false); return true;
+        case cmMenuUpperCase: changeSelectionCase(SelectionCase::upper); return true;
+        case cmMenuLowerCase: changeSelectionCase(SelectionCase::lower); return true;
+        case cmMenuInvertCase: changeSelectionCase(SelectionCase::invert); return true;
+        case cmMenuAlternateCase: changeSelectionCase(SelectionCase::alternate); return true;
         case cmMenuReadBlock: readBlock(); return true;
         case cmMenuMoveBlock: moveBlock(); return true;
         case cmMenuWriteBlock: writeBlock(); return true;
@@ -298,6 +343,25 @@ public:
 
     bool recording() const { return recording_; }
 
+    void setPersistentBlocks(bool enabled) {
+        persistentBlocks_ = enabled;
+        drawView();
+    }
+
+    bool persistentBlocks() const { return persistentBlocks_; }
+
+    void moveCaret(uint position) {
+        if (persistentBlocks_ && hasSelection()) {
+            const uint start = selStart, end = selEnd;
+            setCurPtr(position, 0);
+            selStart = start;
+            selEnd = end;
+            update(ufView);
+        } else {
+            setCurPtr(position, 0);
+        }
+    }
+
 private:
     static char prefixCharacter(const TEvent &event) {
         if (event.keyDown.keyCode == kbEsc)
@@ -315,7 +379,7 @@ private:
         TEvent commandEvent{};
         commandEvent.what = evCommand;
         commandEvent.message.command = command;
-        TFileEditor::handleEvent(commandEvent);
+        handleBaseEvent(commandEvent);
         if (curPtr != oldCursor)
             lastCursor_ = oldCursor;
     }
@@ -333,6 +397,10 @@ private:
             runFeature(cmMatchBracket);
             return true;
         }
+        if (key == TKey(kbIns, ctrlShift)) {
+            replaceSelection();
+            return true;
+        }
         if (event.keyDown.controlKeyState & kbCtrlShift) {
             int digit = -1;
             const uchar scan = event.keyDown.charScan.scanCode;
@@ -343,7 +411,7 @@ private:
                     marks_[digit] = curPtr;
                     markSet_[digit] = true;
                 } else if (markSet_[digit]) {
-                    setCurPtr(std::min(marks_[digit], bufLen), 0);
+                    moveCaret(std::min(marks_[digit], bufLen));
                 }
                 return true;
             }
@@ -355,7 +423,7 @@ private:
         else if (matches('B', ctrlShift)) command = cmMenuBlockStart;
         else if (matches('K', ctrlShift)) command = cmMenuBlockEnd;
         else if (matches('C', ctrlShift)) command = cmCopy;
-        else if (matches('H', ctrlShift)) command = cmHideSelect;
+        else if (matches('H', ctrlShift)) command = cmMenuHideBlock;
         else if (matches('X', ctrlShift)) command = cmCut;
         else if (matches('L', ctrlShift)) command = cmMenuSelectLine;
         else if (matches('T', ctrlShift)) command = cmMenuSelectWord;
@@ -388,7 +456,7 @@ private:
         else return false;
 
         switch (command) {
-        case cmDelEnd: case cmDelStart: case cmCopy: case cmHideSelect: case cmCut:
+        case cmDelEnd: case cmDelStart: case cmCopy: case cmCut:
             dispatchEditorCommand(command);
             break;
         default:
@@ -404,13 +472,13 @@ private:
         if (mode == 1) {
             switch (key) {
             case 'A': dispatchEditorCommand(cmReplace); return;
-            case 'B': if (hasSelection()) setCurPtr(selStart, 0); return;
+            case 'B': if (hasSelection()) moveCaret(selStart); return;
             case 'C': dispatchEditorCommand(cmTextEnd); return;
             case 'D': dispatchEditorCommand(cmLineEnd); return;
-            case 'E': setCurPtr(lineMove(curPtr, -curPos.y), 0); return;
+            case 'E': moveCaret(lineMove(curPtr, -curPos.y)); return;
             case 'F': dispatchEditorCommand(cmFind); return;
             case 'H': dispatchEditorCommand(cmDelStart); return;
-            case 'K': if (hasSelection()) setCurPtr(selEnd, 0); return;
+            case 'K': if (hasSelection()) moveCaret(selEnd); return;
             case 'L': {
                 char text[80];
                 std::snprintf(text, sizeof(text), "Selection length: %u",
@@ -421,18 +489,18 @@ private:
             case 'M': runFeature(cmPlayMacro); return;
             case 'P': {
                 const uint previous = curPtr;
-                setCurPtr(std::min(lastCursor_, bufLen), 0);
+                moveCaret(std::min(lastCursor_, bufLen));
                 lastCursor_ = previous;
                 return;
             }
             case 'R': dispatchEditorCommand(cmTextStart); return;
             case 'S': dispatchEditorCommand(cmLineStart); return;
-            case 'X': setCurPtr(lineMove(curPtr, size.y - 1 - curPos.y), 0); return;
+            case 'X': moveCaret(lineMove(curPtr, size.y - 1 - curPos.y)); return;
             case 'Y': dispatchEditorCommand(cmDelEnd); return;
             case '[': case ']': runFeature(cmMatchBracket); return;
             default:
                 if (key >= '0' && key <= '9' && markSet_[key - '0'])
-                    setCurPtr(std::min(marks_[key - '0'], bufLen), 0);
+                    moveCaret(std::min(marks_[key - '0'], bufLen));
                 return;
             }
         }
@@ -465,19 +533,19 @@ private:
         }
         switch (key) {
         case 'B': beginBlock(); return;
-        case 'C': if (hasSelection()) clipCopy(); return;
-        case 'H': dispatchEditorCommand(cmHideSelect); return;
-        case 'I': indentSelection(1); return;
+        case 'C': copyBlock(); return;
+        case 'H': toggleBlockHidden(); return;
+        case 'I': indentSelection(1, 1); return;
         case 'K': endBlock(); return;
         case 'L': selectLine(); return;
-        case 'M': changeSelectionCase(true); return;
-        case 'O': changeSelectionCase(false); return;
+        case 'M': changeSelectionCase(SelectionCase::upper); return;
+        case 'O': changeSelectionCase(SelectionCase::lower); return;
         case 'R': readBlock(); return;
         case 'T': selectWord(); return;
-        case 'U': indentSelection(-1); return;
+        case 'U': indentSelection(-1, 1); return;
         case 'V': moveBlock(); return;
         case 'W': writeBlock(); return;
-        case 'Y': if (hasSelection()) clipCut(); return;
+        case 'Y': cutSelectedBlock(); return;
         default:
             if (key >= '0' && key <= '9') {
                 marks_[key - '0'] = curPtr;
@@ -490,6 +558,7 @@ private:
     void beginBlock() {
         blockStart_ = curPtr;
         blockSelecting_ = true;
+        blockHidden_ = false;
         setSelect(curPtr, curPtr, False);
     }
 
@@ -499,11 +568,13 @@ private:
         setSelect(std::min(blockStart_, curPtr), std::max(blockStart_, curPtr),
                   Boolean(curPtr < blockStart_));
         blockSelecting_ = false;
+        blockHidden_ = false;
     }
 
     void selectLine() {
         const uint start = lineStart(curPtr);
         setSelect(start, lineEnd(curPtr), Boolean(curPtr == start));
+        blockHidden_ = false;
     }
 
     void selectWord() {
@@ -513,15 +584,16 @@ private:
             start = prevWord(start);
         end = nextWord(end);
         setSelect(start, end, False);
+        blockHidden_ = false;
     }
 
-    void indentSelection(int direction) {
+    void indentSelection(int direction, int requestedWidth = 0) {
         if (!hasSelection())
             return;
         const uint start = lineStart(selStart);
         const uint end = selEnd;
         std::string changed;
-        const int width = std::max(1, TEditor::tabSize);
+        const int width = requestedWidth > 0 ? requestedWidth : std::max(1, TEditor::tabSize);
         const std::string indent(static_cast<size_t>(width), ' ');
         bool lineBeginning = true;
         for (uint p = start; p < end;) {
@@ -546,28 +618,73 @@ private:
         }
         setSelect(start, end, False);
         insertText(changed.data(), static_cast<uint>(changed.size()), False);
+        setSelect(start, start + static_cast<uint>(changed.size()), False);
     }
 
-    void changeSelectionCase(bool upper) {
+    void changeSelectionCase(SelectionCase mode) {
         if (!hasSelection()) return;
+        const uint start = selStart;
         std::string text;
+        size_t letter = 0;
         for (uint p = selStart; p < selEnd; p = nextChar(p)) {
             const unsigned char c = static_cast<unsigned char>(bufChar(p));
-            text.push_back(static_cast<char>(upper ? std::toupper(c) : std::tolower(c)));
+            unsigned char changed = c;
+            switch (mode) {
+            case SelectionCase::lower: changed = static_cast<unsigned char>(std::tolower(c)); break;
+            case SelectionCase::upper: changed = static_cast<unsigned char>(std::toupper(c)); break;
+            case SelectionCase::invert:
+                changed = static_cast<unsigned char>(std::islower(c) ? std::toupper(c) : std::tolower(c));
+                break;
+            case SelectionCase::alternate:
+                if (std::isalpha(c)) {
+                    changed = static_cast<unsigned char>((letter++ & 1) ? std::tolower(c) : std::toupper(c));
+                }
+                break;
+            }
+            text.push_back(static_cast<char>(changed));
         }
         setSelect(selStart, selEnd, False);
         insertText(text.data(), static_cast<uint>(text.size()), False);
+        if (persistentBlocks_)
+            setSelect(start, start + static_cast<uint>(text.size()), False);
     }
 
-    void moveBlock() {
-        if (!hasSelection() || (curPtr >= selStart && curPtr <= selEnd)) return;
+    void copyBlock() {
+        if (!persistentBlocks_ || !hasSelection()) return;
+        if (blockHidden_) {
+            blockHidden_ = false;
+            update(ufView);
+            return;
+        }
         std::string text;
         for (uint p = selStart; p < selEnd; p = nextChar(p))
             text.push_back(bufChar(p));
-        const uint destination = curPtr > selEnd ? curPtr - (selEnd - selStart) : curPtr;
+        const uint caret = curPtr, oldLength = bufLen;
+        selStart = selEnd = caret;
+        insertText(text.data(), static_cast<uint>(text.size()), False);
+        const uint inserted = bufLen - oldLength;
+        setSelect(caret, caret + inserted, False);
+        blockHidden_ = false;
+        trackCursor(True);
+    }
+
+    void moveBlock() {
+        if (!persistentBlocks_ || !hasSelection() || blockHidden_ ||
+            (curPtr >= selStart && curPtr < selEnd)) return;
+        const uint start = selStart, end = selEnd;
+        std::string text;
+        for (uint p = start; p < end; p = nextChar(p))
+            text.push_back(bufChar(p));
+        const uint destination = curPtr > end ? curPtr - (end - start) : curPtr;
+        setCurPtr(end, 0);
+        selStart = start;
+        selEnd = end;
         deleteSelect();
         setCurPtr(destination, 0);
         insertText(text.data(), static_cast<uint>(text.size()), False);
+        setSelect(destination, destination + static_cast<uint>(text.size()), False);
+        blockHidden_ = false;
+        trackCursor(True);
     }
 
     void readBlock() {
@@ -575,13 +692,174 @@ private:
         TView *dialog = TProgram::application->validView(
             new TFileDialog("*.*", "Read block", "~N~ame", fdOpenButton, 120));
         if (!dialog) return;
-        if (TProgram::deskTop->execView(dialog) == cmOK) {
+        const bool accepted = TProgram::deskTop->execView(dialog) == cmOK;
+        if (accepted)
             dialog->getData(path);
-            std::ifstream file(std::filesystem::u8path(path), std::ios::binary);
-            const std::string text((std::istreambuf_iterator<char>(file)), {});
-            if (file || file.eof()) insertText(text.data(), static_cast<uint>(text.size()), False);
-        }
         TObject::destroy(dialog);
+        if (!accepted) return;
+
+        std::ifstream file(std::filesystem::u8path(path), std::ios::binary);
+        if (!file) {
+            messageBox("Cannot read the selected block file.", mfError | mfOKButton);
+            return;
+        }
+        const std::string text((std::istreambuf_iterator<char>(file)), {});
+        if (file.bad()) {
+            messageBox("An error occurred while reading the block file.", mfError | mfOKButton);
+            return;
+        }
+        if (!persistentBlocks_ && hasSelection())
+            clipCut();
+        insertAtCaret(text.data(), static_cast<uint>(text.size()));
+    }
+
+    void replaceSelection() {
+        if (!hasSelection()) return;
+        const uint start = selStart, end = selEnd;
+        setCurPtr(end, 0);
+        selStart = start;
+        selEnd = end;
+        replaceClipboardSelection_ = true;
+        TEvent paste{};
+        paste.what = evCommand;
+        paste.message.command = cmPaste;
+        TFileEditor::handleEvent(paste);
+        if (!hasSelection()) {
+            replaceClipboardSelection_ = false;
+            blockHidden_ = false;
+        }
+    }
+
+    void positionCaretAtSelectionEnd() {
+        const uint start = selStart, end = selEnd;
+        setCurPtr(end, 0);
+        selStart = start;
+        selEnd = end;
+        update(ufView);
+    }
+
+    void cutSelectedBlock() {
+        if (!hasSelection()) return;
+        if (persistentBlocks_)
+            positionCaretAtSelectionEnd();
+        clipCut();
+    }
+
+    void toggleBlockHidden() {
+        if (!hasSelection()) return;
+        blockHidden_ = !blockHidden_;
+        update(ufView);
+    }
+
+    static uint remapBlockEdge(uint edge, uint editStart, uint removed, uint inserted,
+                               bool rightAffinity) {
+        const uint editEnd = editStart + removed;
+        if (edge < editStart || (edge == editStart && !rightAffinity))
+            return edge;
+        if (edge > editEnd || (edge == editEnd && rightAffinity))
+            return edge - removed + inserted;
+        return editStart + (rightAffinity ? inserted : 0);
+    }
+
+    void restorePersistentBlock(uint start, uint end, uint editStart, uint oldLength) {
+        const uint inserted = bufLen > oldLength ? bufLen - oldLength : 0;
+        const uint removed = oldLength > bufLen ? oldLength - bufLen : 0;
+        start = remapBlockEdge(start, editStart, removed, inserted, true);
+        end = remapBlockEdge(end, editStart, removed, inserted, false);
+        start = std::min(start, bufLen);
+        end = std::min(end, bufLen);
+        if (start > end) std::swap(start, end);
+        selStart = start;
+        selEnd = end;
+        selecting = False;
+        update(ufView);
+        updateCommands();
+    }
+
+    void insertAtCaret(const void *text, uint length) {
+        if (!persistentBlocks_ || !hasSelection()) {
+            insertText(text, length, False);
+            return;
+        }
+        const uint start = selStart, end = selEnd, caret = curPtr, oldLength = bufLen;
+        const bool hidden = blockHidden_;
+        selStart = selEnd = caret;
+        insertText(text, length, False);
+        restorePersistentBlock(start, end, caret, oldLength);
+        blockHidden_ = hidden;
+        update(ufView);
+    }
+
+    uint deletionStart(const TEvent &event, uint caret, uint removed, uint lineStartBefore) {
+        if (event.what == evCommand) {
+            const ushort command = event.message.command;
+            if (command == cmBackSpace || command == cmDelWordLeft || command == cmUndo)
+                return caret > removed ? caret - removed : 0;
+            if (command == cmDelLine)
+                return lineStartBefore;
+        }
+        if (event.what == evKeyDown &&
+            (event.keyDown.keyCode == kbBack || event.keyDown.keyCode == kbCtrlBack ||
+             event.keyDown.keyCode == kbCtrlU))
+            return caret > removed ? caret - removed : 0;
+        if (event.what == evKeyDown && event.keyDown.keyCode == kbCtrlY)
+            return lineStartBefore;
+        return caret;
+    }
+
+    bool isSelectedBlockDelete(const TEvent &event) const {
+        if (event.what == evCommand)
+            return event.message.command == cmCut || event.message.command == cmClear;
+        if (event.what != evKeyDown) return false;
+        return event.keyDown.keyCode == kbShiftDel || event.keyDown.keyCode == kbCtrlDel;
+    }
+
+    bool isDefaultBlockCut(const TEvent &event) const {
+        if (event.what == evCommand)
+            return event.message.command == cmBackSpace || event.message.command == cmDelChar;
+        if (event.what != evKeyDown) return false;
+        return event.keyDown.keyCode == kbBack || event.keyDown.keyCode == kbDel;
+    }
+
+    bool isShiftSelection(const TEvent &event) const {
+        return event.what == evKeyDown && (event.keyDown.controlKeyState & kbShift);
+    }
+
+    void handleBaseEvent(TEvent &event) {
+        const bool copyCommand = (event.what == evCommand && event.message.command == cmCopy) ||
+            (event.what == evKeyDown && event.keyDown.keyCode == kbCtrlIns);
+        if (!persistentBlocks_ && hasSelection() && isDefaultBlockCut(event)) {
+            TEvent cut{};
+            cut.what = evCommand;
+            cut.message.command = cmCut;
+            TFileEditor::handleEvent(cut);
+            return;
+        }
+        if (persistentBlocks_ && hasSelection() && isSelectedBlockDelete(event)) {
+            positionCaretAtSelectionEnd();
+            TFileEditor::handleEvent(event);
+            return;
+        }
+        if (!persistentBlocks_ || !hasSelection() || copyCommand || isShiftSelection(event) || (event.what == evCommand &&
+            (event.message.command == cmSelectAll || event.message.command == cmStartSelect))) {
+            TFileEditor::handleEvent(event);
+            return;
+        }
+        const uint start = selStart, end = selEnd, caret = curPtr, oldLength = bufLen;
+        const uint lineStartBefore = lineStart(caret);
+        const bool hidden = blockHidden_;
+        selStart = selEnd = caret;
+        selecting = False;
+        TFileEditor::handleEvent(event);
+        if (hasSelection() && selecting) {
+            blockHidden_ = false;
+            return;
+        }
+        const uint removed = oldLength > bufLen ? oldLength - bufLen : 0;
+        restorePersistentBlock(start, end,
+                               deletionStart(event, caret, removed, lineStartBefore), oldLength);
+        blockHidden_ = hidden;
+        update(ufView);
     }
 
     void writeBlock() {
@@ -870,7 +1148,7 @@ private:
             }
             if (c == '{' && previous < tokens_.size() && tokens_[previous] == tokenNormal) {
                 const std::string indentation(static_cast<size_t>(std::max(1, TEditor::tabSize)), ' ');
-                insertText(indentation.data(), static_cast<uint>(indentation.size()), False);
+                insertAtCaret(indentation.data(), static_cast<uint>(indentation.size()));
                 trackCursor(True);
             }
             break;
@@ -1030,6 +1308,11 @@ private:
     void ensureTokens() {
         if (tokensValid_ && tokens_.size() == bufLen)
             return;
+        if (!isCppFile(fileName)) {
+            tokens_.clear();
+            tokensValid_ = true;
+            return;
+        }
         // ponytail: rescan the buffer after edits; large files can use per-line state checkpoints.
         tokens_.assign(bufLen, tokenNormal);
         bool inBlockComment = false;
@@ -1160,6 +1443,9 @@ private:
     int prefixMode_ = 0;
     int prefixPage_ = 0;
     bool blockSelecting_ = false;
+    bool persistentBlocks_ = false;
+    bool blockHidden_ = false;
+    bool replaceClipboardSelection_ = false;
     bool rectangleValid_ = false;
     bool rectangleHidden_ = false;
     bool moveOnPaste_ = false;
@@ -1191,8 +1477,6 @@ void setEditorDebugState(TFileEditor *editor, const std::vector<int> &breakpoint
 
 SyntaxEditWindow::SyntaxEditWindow(const TRect &bounds, TStringView fileName, int number)
     : TWindowInit(&TWindow::initFrame), TEditWindow(bounds, fileName, number) {
-    if (!isCppFile(fileName))
-        return;
     TFileEditor *oldEditor = editor;
     const TRect editorBounds = oldEditor->getBounds();
     TScrollBar *horizontal = oldEditor->hScrollBar;
@@ -1230,4 +1514,26 @@ bool isEditorFeatureRecording(TFileEditor *editor) {
 
 bool editorSupportsPrefixKeys(TFileEditor *editor) {
     return dynamic_cast<SyntaxEditor *>(editor) != nullptr;
+}
+
+void setDefaultPersistentBlocks(bool enabled) {
+    defaultPersistentBlocks = enabled;
+}
+
+void setEditorPersistentBlocks(TFileEditor *editor, bool enabled) {
+    if (auto *syntaxEditor = dynamic_cast<SyntaxEditor *>(editor))
+        syntaxEditor->setPersistentBlocks(enabled);
+}
+
+bool editorPersistentBlocks(TFileEditor *editor) {
+    if (auto *syntaxEditor = dynamic_cast<SyntaxEditor *>(editor))
+        return syntaxEditor->persistentBlocks();
+    return false;
+}
+
+void moveEditorCursor(TFileEditor *editor, uint position) {
+    if (auto *syntaxEditor = dynamic_cast<SyntaxEditor *>(editor))
+        syntaxEditor->moveCaret(position);
+    else if (editor)
+        editor->setCurPtr(position, 0);
 }

@@ -1,5 +1,0 @@
-#!/bin/sh
-dh_testdir || exit $?
-chmod +x debian/rules
-dpkg-buildpackage -rfakeroot
-

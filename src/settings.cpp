@@ -29,9 +29,13 @@ void loadSettings(IDESettings &settings) {
     std::ifstream input(fileName(), std::ios::binary);
     std::string line;
     while (std::getline(input, line)) {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
         if (line.rfind("tab_size=", 0) == 0) {
             try { settings.tabSize = std::clamp(std::stoi(line.substr(9)), 1, 32); }
             catch (...) {}
+        } else if (line.rfind("persistent_blocks=", 0) == 0) {
+            settings.persistentBlocks = line.substr(18) == "1";
         } else if (line.rfind("default_extension=", 0) == 0) {
             settings.defaultExtension = line.substr(18);
         } else if (line.rfind("current_directory=", 0) == 0) {
@@ -50,6 +54,7 @@ void saveSettings(const IDESettings &settings) {
     if (!output)
         return;
     output << "tab_size=" << std::clamp(settings.tabSize, 1, 32) << "\n";
+    output << "persistent_blocks=" << (settings.persistentBlocks ? 1 : 0) << "\n";
     output << "default_extension=" << settings.defaultExtension << "\n";
     if (!settings.currentDirectory.empty())
         output << "current_directory=" << toUtf8(settings.currentDirectory) << "\n";

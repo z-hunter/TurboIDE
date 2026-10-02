@@ -1,6 +1,0 @@
-#!/bin/sh
-gzip -d cvsdiff.gz
-tools/cvssyncput cvsdiff files.tar.gz
-echo "CVS synchronized (I hope ;-)"
-echo "Now tag this for future reference"
-

@@ -401,8 +401,7 @@ bool expandPseudoMacro(TFileEditor *editor, bool chooseFromList) {
     } else {
         std::vector<const PseudoMacro *> candidates;
         for (const auto &macro : macros)
-            if (typed.empty() || macro.trigger[0] == typed.front())
-                candidates.push_back(&macro);
+            candidates.push_back(&macro);
         std::vector<std::string> names;
         names.reserve(candidates.size());
         for (const auto *macro : candidates)
@@ -411,7 +410,7 @@ bool expandPseudoMacro(TFileEditor *editor, bool chooseFromList) {
         if (selected >= candidates.size())
             return true;
         chosen = candidates[selected];
-        removeTrigger = chooseFromList ? 0 : typed.size();
+        removeTrigger = 0;
     }
 
     std::vector<Variable> variables;
