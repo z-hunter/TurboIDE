@@ -361,9 +361,7 @@ public:
     bool persistentBlocks() const { return persistentBlocks_; }
 
     void moveCaret(uint position) {
-        if (selecting) {
-            setCurPtr(position, smExtend);
-        } else if (persistentBlocks_ && hasSelection()) {
+        if (persistentBlocks_ && hasSelection()) {
             const uint start = selStart, end = selEnd;
             setCurPtr(position, 0);
             selStart = start;
@@ -568,25 +566,30 @@ private:
     }
 
     void beginBlock() {
+        blockStart_ = curPtr;
+        blockSelecting_ = true;
         blockHidden_ = false;
         setSelect(curPtr, curPtr, False);
-        selecting = True;
     }
 
     void endBlock() {
-        if (!selecting)
+        if (!blockSelecting_)
             return;
-        selecting = False;
+        setSelect(std::min(blockStart_, curPtr), std::max(blockStart_, curPtr),
+                  Boolean(curPtr < blockStart_));
+        blockSelecting_ = false;
         blockHidden_ = false;
     }
 
     void selectLine() {
+        cancelPendingBlockSelection();
         const uint start = lineStart(curPtr);
         setSelect(start, lineEnd(curPtr), Boolean(curPtr == start));
         blockHidden_ = false;
     }
 
     void selectWord() {
+        cancelPendingBlockSelection();
         uint start = curPtr;
         uint end = curPtr;
         if (start > 0 && start == end)
@@ -858,8 +861,14 @@ private:
 
     void discardSelectionAnchor() {
         blockHidden_ = false;
+        cancelPendingBlockSelection();
         selecting = False;
         setSelect(curPtr, curPtr, False);
+    }
+
+    void cancelPendingBlockSelection() {
+        blockStart_ = curPtr;
+        blockSelecting_ = false;
     }
 
     void handleBaseEvent(TEvent &event) {
@@ -877,9 +886,11 @@ private:
             TFileEditor::handleEvent(event);
             return;
         }
-        if (selecting || startsMouseSelection(event) || !persistentBlocks_ || !hasSelection() || copyCommand ||
+        if (startsMouseSelection(event) || !persistentBlocks_ || !hasSelection() || copyCommand ||
             isShiftSelection(event) || (event.what == evCommand &&
             (event.message.command == cmSelectAll || event.message.command == cmStartSelect))) {
+            if (event.what == evCommand && event.message.command == cmSelectAll)
+                cancelPendingBlockSelection();
             TFileEditor::handleEvent(event);
             return;
         }
@@ -1476,9 +1487,11 @@ private:
     std::string rectClipboard_;
     uint marks_[10]{};
     bool markSet_[10]{};
+    uint blockStart_ = 0;
     uint lastCursor_ = 0;
     int prefixMode_ = 0;
     int prefixPage_ = 0;
+    bool blockSelecting_ = false;
     bool shiftSelectionActive_ = false;
     bool persistentBlocks_ = false;
     bool blockHidden_ = false;
