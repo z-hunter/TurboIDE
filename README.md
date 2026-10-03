@@ -1,7 +1,12 @@
-# TurboIDE
+# Retro-Turbo-IDE
 
-A console IDE for C in the style of Borland Turbo C. Its interface is built on
-Turbo Vision; user sources are compiled with MinGW-w64 GCC.
+A console IDE in the style of **Borland Turbo C**. Its interface is built on
+modern Turbo Vision port; user sources are compiled with MinGW-w64 GCC.
+
+The goal is to recreate the experience of Borland’s legendary classic Turbo C IDE from the DOS era in the modern Windows console.
+There are some enhancements, such as snippet support and macros, but care was taken to ensure they feel organic—as if, in some parallel universe, Borland still existed and continued developing projects for DOS :)
+
+<img width="1363" height="1008" alt="Screenshot_39" src="https://github.com/user-attachments/assets/53448ab8-f625-4484-a5a1-2c418243c8c7" />
 
 ## Building the IDE
 
