@@ -6,7 +6,7 @@ modern Turbo Vision port; user sources are compiled with MinGW-w64 GCC.
 The goal is to recreate the experience of Borland’s legendary classic Turbo C IDE from the DOS era in the modern Windows console.
 There are some enhancements, such as snippet support and macros, but care was taken to ensure they feel organic—as if, in some parallel universe, Borland still existed and continued developing projects for DOS :)
 
-<img width="1363" height="1008" alt="Screenshot_39" src="https://github.com/user-attachments/assets/53448ab8-f625-4484-a5a1-2c418243c8c7" />
+<img width="1370" height="1006" alt="Screenshot_43" src="https://github.com/user-attachments/assets/76f5898c-4f41-4efe-b23e-d0b889e58ed5" />
 
 ## Building the IDE
 
