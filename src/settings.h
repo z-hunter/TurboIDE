@@ -8,6 +8,8 @@ struct IDESettings {
     bool backupFiles = true;
     bool persistentBlocks = true;
     std::string defaultExtension = ".c";
+    std::string compilerType = "gcc";
+    std::filesystem::path compilerPath;
     std::filesystem::path currentDirectory;
     std::filesystem::path lastProject;
 };

@@ -37,6 +37,7 @@ public:
 
     bool start(const std::filesystem::path &executable,
                const std::filesystem::path &workingDirectory,
+               const std::filesystem::path &gdbPath,
                const std::vector<std::wstring> &arguments,
                const std::vector<DebugBreakpoint> &breakpoints,
                HANDLE userScreen, HANDLE consoleInput,
@@ -72,6 +73,7 @@ private:
     HANDLE processJob_ = INVALID_HANDLE_VALUE;
     HANDLE userScreen_ = INVALID_HANDLE_VALUE;
     HANDLE consoleInput_ = INVALID_HANDLE_VALUE;
+    std::filesystem::path gdbPath_;
     std::string inputBuffer_;
     std::vector<std::string> pendingLines_;
     unsigned token_ = 1;

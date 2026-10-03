@@ -13,6 +13,7 @@
 #define Uses_TFileEditor
 #define Uses_TInputLine
 #define Uses_TLabel
+#define Uses_TStaticText
 #define Uses_TListViewer
 #define Uses_TMenuBar
 #define Uses_TMenuItem
@@ -124,6 +125,8 @@ constexpr ushort cmShowLocals = 134;
 constexpr ushort cmHelp = 135;
 constexpr ushort cmColors = 136;
 constexpr ushort cmGoToLine = 145;
+constexpr ushort cmCompiler = 178;
+constexpr ushort cmCompilerBrowse = 179;
 
 // Borland TCHELP context IDs. Future TurboIDE documentation keeps these IDs.
 constexpr ushort hcEditWindow = 402;
@@ -184,6 +187,68 @@ public:
             clearEvent(event);
         }
     }
+};
+
+class CompilerDialog final : public ContextHelpDialog {
+public:
+    CompilerDialog(const TRect &bounds)
+        : TWindowInit(&TWindow::initFrame), ContextHelpDialog(bounds, "Compiler Options", hcOptionsMenu) {}
+
+    void handleEvent(TEvent &event) override {
+        ContextHelpDialog::handleEvent(event);
+        if (event.what == evCommand && event.message.command == cmCompilerBrowse) {
+            endModal(cmCompilerBrowse);
+            clearEvent(event);
+        }
+    }
+};
+
+class ToolchainDirectoryDialog final : public TChDirDialog {
+public:
+    explicit ToolchainDirectoryDialog(std::filesystem::path &compilerPath)
+        : TWindowInit(&TWindow::initFrame), TChDirDialog(cdNormal, 209), compilerPath_(compilerPath) {
+        growTo(68, 20);
+        auto *cancel = new TButton(TRect(55, 15, 65, 17), "Cancel", cmCancel, bfNormal);
+        cancel->growMode = gfGrowLoX | gfGrowHiX;
+        insert(cancel);
+        insert(new TStaticText(TRect(2, 18, 66, 19),
+            "Select the folder, not a file: gcc.exe, g++.exe, gdb.exe."));
+    }
+
+    Boolean valid(ushort command) override {
+        if (!TChDirDialog::valid(command) || command != cmOK)
+            return command != cmOK;
+
+        std::error_code error;
+        const auto directory = std::filesystem::current_path(error);
+        std::string missing;
+        for (const wchar_t *tool : {L"gcc.exe", L"g++.exe", L"gdb.exe"})
+            if (error || !std::filesystem::is_regular_file(directory / tool, error)) {
+                if (!missing.empty()) missing += ", ";
+                missing += std::filesystem::path(tool).string();
+            }
+        if (!missing.empty()) {
+            messageBox(("The selected folder is missing: " + missing + ".").c_str(),
+                       mfError | mfOKButton);
+            return False;
+        }
+        compilerPath_ = directory / L"gcc.exe";
+        return True;
+    }
+
+    void handleEvent(TEvent &event) override {
+        if ((event.what == evKeyDown && event.keyDown.keyCode == kbEsc) ||
+            (event.what == evCommand &&
+             (event.message.command == cmCancel || event.message.command == cmClose))) {
+            endModal(cmCancel);
+            clearEvent(event);
+            return;
+        }
+        TChDirDialog::handleEvent(event);
+    }
+
+private:
+    std::filesystem::path &compilerPath_;
 };
 
 class ContextHelpFileDialog : public TFileDialog {
@@ -549,6 +614,23 @@ TDialog *createEditorDialog(TInputLine *&tabs, TInputLine *&extension,
     return dialog;
 }
 
+TDialog *createCompilerDialog(TInputLine *&path) {
+    auto *dialog = new CompilerDialog(TRect(0, 0, 68, 15));
+    dialog->options |= ofCentered;
+    auto *type = new TStaticText(TRect(3, 3, 64, 4), "Compiler type: GCC");
+    dialog->insert(type);
+    dialog->insert(new TStaticText(TRect(3, 5, 64, 6),
+        "Path is optional; Browse selects a GCC toolchain folder."));
+    path = new TInputLine(TRect(3, 8, 65, 9), MAX_PATH - 1);
+    dialog->insert(path);
+    dialog->insert(new TLabel(TRect(3, 7, 36, 8), "GCC folder or executable ~p~ath", path));
+    dialog->insert(new TButton(TRect(3, 10, 14, 12), "~B~rowse...", cmCompilerBrowse, bfNormal));
+    dialog->insert(new TButton(TRect(36, 12, 46, 14), "O~K~", cmOK, bfDefault));
+    dialog->insert(new TButton(TRect(50, 12, 61, 14), "Cancel", cmCancel, bfNormal));
+    dialog->selectNext(False);
+    return dialog;
+}
+
 std::wstring utf8ToWide(std::string_view text) {
     if (text.empty()) return {};
     const int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(),
@@ -770,6 +852,7 @@ private:
     void editRunDirectory();
     void changeDirectory();
     void editEnvironment();
+    void editCompiler();
     void editColors();
     bool activateProject(const std::filesystem::path &file, bool showWindow = true);
     void closeUnusedUntitledEditors();
@@ -2121,6 +2204,67 @@ void TurboIDEApp::editEnvironment() {
             setEditorPersistentBlocks(window->editor, settings_.persistentBlocks);
 }
 
+void TurboIDEApp::editCompiler() {
+    char value[MAX_PATH]{};
+    const auto configured = settings_.compilerPath.u8string();
+    std::snprintf(value, sizeof(value), "%s", configured.c_str());
+    ushort result = cmCancel;
+    do {
+        TInputLine *path = nullptr;
+        TDialog *dialog = createCompilerDialog(path);
+        path->setData(value);
+        TView *view = TProgram::application->validView(dialog);
+        if (!view)
+            return;
+        result = TProgram::deskTop->execView(view);
+        if (result != cmCancel)
+            path->getData(value);
+        TObject::destroy(view);
+        if (result == cmCompilerBrowse) {
+            std::error_code directoryError;
+            const auto originalDirectory = std::filesystem::current_path(directoryError);
+            std::filesystem::path compiler;
+            const ushort directoryResult = execDialog(new ToolchainDirectoryDialog(compiler));
+            if (!originalDirectory.empty())
+                std::filesystem::current_path(originalDirectory, directoryError);
+            if (directoryResult == cmOK && !directoryError)
+                std::snprintf(value, sizeof(value), "%s", compiler.u8string().c_str());
+        }
+    } while (result == cmCompilerBrowse);
+    if (result == cmCancel)
+        return;
+
+    std::filesystem::path compiler = value[0] ? std::filesystem::u8path(value) :
+                                                std::filesystem::path{};
+    std::error_code error;
+    if (!compiler.empty()) {
+        compiler = std::filesystem::absolute(compiler, error).lexically_normal();
+        if (!error && std::filesystem::is_directory(compiler, error))
+            compiler /= L"gcc.exe";
+    }
+    if (error || (!compiler.empty() && !std::filesystem::is_regular_file(compiler, error))) {
+        messageBox("Select a GCC toolchain folder, an existing gcc.exe, or leave the path empty.",
+                   mfError | mfOKButton);
+        return;
+    }
+    if (!compiler.empty()) {
+        std::string missing;
+        for (const wchar_t *tool : {L"gcc.exe", L"g++.exe", L"gdb.exe"})
+            if (!std::filesystem::is_regular_file(compiler.parent_path() / tool, error)) {
+                if (!missing.empty()) missing += ", ";
+                missing += std::filesystem::path(tool).string();
+            }
+        if (!missing.empty()) {
+            const std::string message = "The selected toolchain folder is missing: " + missing + ".";
+            messageBox(message.c_str(), mfError | mfOKButton);
+            return;
+        }
+    }
+    settings_.compilerType = "gcc";
+    settings_.compilerPath = compiler;
+    saveSettings(settings_);
+}
+
 void TurboIDEApp::editColors() {
     TColorGroup &groups =
         *new TColorGroup("Desktop") +
@@ -2172,6 +2316,7 @@ void TurboIDEApp::startBuild(BuildRequest request, bool runAfterBuild,
     }
     if (buildThread_.joinable())
         buildThread_.join();
+    request.compilerPath = settings_.compilerPath;
     buildRunning_ = true;
     buildReturnView_ = deskTop->current;
     buildCancelRequested.store(false);
@@ -2496,7 +2641,9 @@ void TurboIDEApp::startDebuggee(const std::filesystem::path &executable) {
     auto session = std::make_unique<GdbSession>();
     DebugStop firstStop;
     std::string error;
-    if (!session->start(executable, runWorkingDirectory_, runArguments_, allBreakpoints(),
+    const auto gdbPath = settings_.compilerPath.empty() ? std::filesystem::path{} :
+                         settings_.compilerPath.parent_path() / L"gdb.exe";
+    if (!session->start(executable, runWorkingDirectory_, gdbPath, runArguments_, allBreakpoints(),
                         userScreenBuffer_, consoleInput_, firstStop, error)) {
         SetConsoleActiveScreenBuffer(ideScreenBuffer_);
         session.reset();
@@ -3119,6 +3266,9 @@ void TurboIDEApp::handleEvent(TEvent &event) {
     case cmEnvironment:
         editEnvironment();
         break;
+    case cmCompiler:
+        editCompiler();
+        break;
     case cmColors:
         editColors();
         break;
@@ -3334,7 +3484,7 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
                     *disabledMenuItem(new TMenuItem("~S~tartup...", cmNotReady, TKey(kbNoKey), hcEnvironmentStartup)) +
                     *new TMenuItem("~C~olors...", cmColors, TKey(kbNoKey), hcEnvironmentColors)),
                 hcEnvironmentMenu) +
-            *disabledMenuItem(new TMenuItem("~C~ompiler...", cmNotReady, TKey(kbNoKey))) +
+            *new TMenuItem("~C~ompiler...", cmCompiler, TKey(kbNoKey)) +
             *disabledMenuItem(new TMenuItem("~D~irectories...", cmNotReady, TKey(kbNoKey))) +
         *new TSubMenu("~W~indow", kbAltW, hcWindowMenu) +
             *new TMenuItem("~S~ize/move", cmResize, kbCtrlF5, hcNoContext, "Ctrl-F5") +

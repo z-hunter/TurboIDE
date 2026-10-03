@@ -4,6 +4,7 @@
 
 #include "debugger.h"
 #include "gdb_mi.h"
+#include "toolchain_environment.h"
 
 #include <algorithm>
 #include <atomic>
@@ -119,7 +120,9 @@ bool GdbSession::launchGdb(std::string &error) {
     wchar_t configured[MAX_PATH]{};
     DWORD length = GetEnvironmentVariableW(L"TURBOIDE_GDB", configured, MAX_PATH);
     std::wstring executable;
-    if (length > 0 && length < MAX_PATH)
+    if (!gdbPath_.empty())
+        executable = gdbPath_.wstring();
+    else if (length > 0 && length < MAX_PATH)
         executable.assign(configured, length);
     else {
         wchar_t found[MAX_PATH]{};
@@ -156,8 +159,10 @@ bool GdbSession::launchGdb(std::string &error) {
     startup.hStdError = outputWrite;
     std::wstring command = quoteWindowsArgument(executable) + L" --interpreter=mi2 --quiet";
     PROCESS_INFORMATION process{};
+    auto environment = toolchainEnvironment(std::filesystem::path(executable));
     const BOOL created = CreateProcessW(executable.c_str(), command.data(), nullptr, nullptr,
-        TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process);
+        TRUE, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+        environment.empty() ? nullptr : environment.data(), nullptr, &startup, &process);
     CloseHandle(inputRead);
     CloseHandle(outputWrite);
     if (!created) {
@@ -319,6 +324,7 @@ bool GdbSession::insertBreakpoint(const std::string &location, bool temporary,
 
 bool GdbSession::start(const std::filesystem::path &executable,
                        const std::filesystem::path &workingDirectory,
+                       const std::filesystem::path &gdbPath,
                        const std::vector<std::wstring> &arguments,
                        const std::vector<DebugBreakpoint> &breakpoints,
                        HANDLE userScreen, HANDLE consoleInput,
@@ -327,6 +333,7 @@ bool GdbSession::start(const std::filesystem::path &executable,
     error.clear();
     userScreen_ = userScreen;
     consoleInput_ = consoleInput;
+    gdbPath_ = gdbPath;
     supportsMayCallFunctions_ = false;
     mayCallFunctionsEnabled_ = true;
 

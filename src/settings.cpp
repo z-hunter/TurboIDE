@@ -40,6 +40,11 @@ void loadSettings(IDESettings &settings) {
             settings.persistentBlocks = line.substr(18) == "1";
         } else if (line.rfind("default_extension=", 0) == 0) {
             settings.defaultExtension = line.substr(18);
+        } else if (line.rfind("compiler_type=", 0) == 0) {
+            if (line.substr(14) == "gcc")
+                settings.compilerType = "gcc";
+        } else if (line.rfind("compiler_path=", 0) == 0) {
+            settings.compilerPath = std::filesystem::u8path(line.substr(14));
         } else if (line.rfind("current_directory=", 0) == 0) {
             settings.currentDirectory = std::filesystem::u8path(line.substr(18));
         } else if (line.rfind("last_project=", 0) == 0) {
@@ -59,6 +64,9 @@ void saveSettings(const IDESettings &settings) {
     output << "backup_files=" << (settings.backupFiles ? 1 : 0) << "\n";
     output << "persistent_blocks=" << (settings.persistentBlocks ? 1 : 0) << "\n";
     output << "default_extension=" << settings.defaultExtension << "\n";
+    output << "compiler_type=gcc\n";
+    if (!settings.compilerPath.empty())
+        output << "compiler_path=" << toUtf8(settings.compilerPath) << "\n";
     if (!settings.currentDirectory.empty())
         output << "current_directory=" << toUtf8(settings.currentDirectory) << "\n";
     if (!settings.lastProject.empty())

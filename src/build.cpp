@@ -1,4 +1,5 @@
 #include "build.h"
+#include "toolchain_environment.h"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -30,7 +31,9 @@ std::wstring quote(const std::wstring &argument) {
     return result;
 }
 
-std::wstring compilerPath() {
+std::wstring compilerPath(const BuildRequest &request) {
+    if (!request.compilerPath.empty())
+        return request.compilerPath.wstring();
     DWORD required = GetEnvironmentVariableW(L"TURBOIDE_GCC", nullptr, 0);
     if (required) {
         std::wstring path(required, L'\0');
@@ -175,9 +178,9 @@ void addArg(std::wstring &command, const std::wstring &arg) {
 
 BuildResult runBuild(const BuildRequest &request, const std::atomic_bool &cancelRequested) {
     BuildResult result;
-    const std::wstring compiler = compilerPath();
+    const std::wstring compiler = compilerPath(request);
     if (compiler.empty()) {
-        result.error = "GCC was not found. Set TURBOIDE_GCC or add gcc.exe to PATH.";
+        result.error = "GCC was not found. Configure it in Options > Compiler, set TURBOIDE_GCC, or add gcc.exe to PATH.";
         return result;
     }
     if (request.sources.empty()) {
@@ -235,8 +238,10 @@ BuildResult runBuild(const BuildRequest &request, const std::atomic_bool &cancel
     startup.hStdError = writePipe;
     startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
     PROCESS_INFORMATION process{};
+    auto environment = toolchainEnvironment(std::filesystem::path(compiler));
     const BOOL created = CreateProcessW(compiler.c_str(), command.data(), nullptr, nullptr, TRUE,
-                                        CREATE_NO_WINDOW, nullptr,
+                                        CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+                                        environment.empty() ? nullptr : environment.data(),
                                         request.workingDirectory.c_str(), &startup, &process);
     CloseHandle(writePipe);
     if (!created) {

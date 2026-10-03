@@ -34,6 +34,7 @@ struct BuildResult {
 
 struct BuildRequest {
     std::filesystem::path workingDirectory;
+    std::filesystem::path compilerPath;
     std::vector<std::filesystem::path> sources;
     std::vector<std::filesystem::path> includeDirs;
     std::vector<std::wstring> defines;
