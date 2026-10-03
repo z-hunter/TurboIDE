@@ -86,14 +86,90 @@ const std::unordered_set<std::string_view> &cppKeywords() {
 
 class SyntaxEditor final : public TFileEditor {
     enum class SelectionCase { lower, upper, invert, alternate };
+    enum class HistoryKind { other, typing, backspace, forwardDelete };
+
+    struct HistoryState {
+        uint cursor = 0;
+        uint start = 0;
+        uint end = 0;
+    };
+
+    struct HistoryEdit {
+        uint position = 0;
+        std::string removed;
+        std::string inserted;
+    };
+
+    struct HistoryEntry {
+        std::vector<HistoryEdit> edits;
+        HistoryState before;
+        HistoryState after;
+        HistoryKind kind = HistoryKind::other;
+        uint64_t beforeRevision = 0;
+        uint64_t afterRevision = 0;
+    };
+
+    class HistoryScope {
+    public:
+        HistoryScope(SyntaxEditor &editor, HistoryKind kind) : editor_(editor) {
+            editor_.beginHistory(kind);
+        }
+        ~HistoryScope() { editor_.endHistory(); }
+    private:
+        SyntaxEditor &editor_;
+    };
 
 public:
     SyntaxEditor(const TRect &bounds, TScrollBar *horizontal, TScrollBar *vertical,
                  TIndicator *indicator, TStringView fileName)
         : TFileEditor(bounds, horizontal, vertical, indicator, fileName),
-          persistentBlocks_(defaultPersistentBlocks) {}
+          persistentBlocks_(defaultPersistentBlocks) {
+        canUndo = False;
+    }
+
+    Boolean insertBuffer(const char *text, uint offset, uint length, Boolean allowUndo,
+                         Boolean selectText, Boolean raw = False) override {
+        const bool implicit = historyDepth_ == 0 && !replayingHistory_;
+        if (implicit)
+            beginHistory(HistoryKind::other);
+        const uint start = selStart;
+        const std::string removed = textRange(selStart, selEnd);
+        const uint oldLength = bufLen;
+        const Boolean result = TFileEditor::insertBuffer(text, offset, length, allowUndo,
+                                                         selectText, raw);
+        if (result && !replayingHistory_) {
+            const uint insertedLength = bufLen - oldLength + static_cast<uint>(removed.size());
+            const std::string inserted = textRange(start, start + insertedLength);
+            if (!removed.empty() || !inserted.empty())
+                recordHistoryEdit({start, removed, inserted});
+        }
+        if (implicit)
+            endHistory();
+        return result;
+    }
+
+    Boolean saveFile() noexcept override {
+        const Boolean saved = TFileEditor::saveFile();
+        if (saved) {
+            savedRevision_ = currentRevision_;
+            modified = False;
+            updateCommands();
+        }
+        return saved;
+    }
 
     void handleEvent(TEvent &event) override {
+        if (isUndo(event)) {
+            undoHistory();
+            clearEvent(event);
+            return;
+        }
+        if (isRedo(event)) {
+            redoHistory();
+            clearEvent(event);
+            return;
+        }
+        HistoryScope history(*this, historyKind(event));
         if (startsMouseSelection(event)) {
             discardSelectionAnchor();
         } else if (isShiftNavigation(event)) {
@@ -156,25 +232,17 @@ public:
         const bool capture = recordable(event);
         const TEvent recorded = event;
         const uint oldCursor = curPtr;
-        const bool snippetUndo = isUndo(event) && canUndoSnippet();
-        if (snippetUndo) {
-            undoSnippet();
+        const bool handledDirect = handleDirectShortcut(event);
+        const bool insertedDedentedBrace = !handledDirect && closeBrace && insertDedentedCloseBrace();
+        if (mayChangeText(event) || handledDirect)
+            tokensValid_ = false;
+        if (handledDirect)
             clearEvent(event);
-        } else {
-            if (snippetUndo_.valid && mayChangeText(event))
-                snippetUndo_.valid = false;
-            const bool handledDirect = handleDirectShortcut(event);
-            const bool insertedDedentedBrace = !handledDirect && closeBrace && insertDedentedCloseBrace();
-            if (mayChangeText(event) || handledDirect)
-                tokensValid_ = false;
-            if (handledDirect)
-                clearEvent(event);
-            if (insertedDedentedBrace)
-                clearEvent(event);
-            else if (!handledDirect)
-                handleBaseEvent(event);
-        }
-        if (enter && !snippetUndo)
+        if (insertedDedentedBrace)
+            clearEvent(event);
+        else if (!handledDirect)
+            handleBaseEvent(event);
+        if (enter)
             indentAfterOpenBrace();
         if (capture && recording_ && !replaying_) {
             if (macroEvents_.size() < maxMacroEvents)
@@ -273,13 +341,11 @@ public:
     }
 
     bool runFeature(ushort command) {
+        HistoryScope history(*this, HistoryKind::other);
         switch (command) {
         case cmExpandPmacro:
         case cmChoosePmacro: {
-            const std::string before = bufferText();
-            const uint caretBefore = curPtr;
             expandPmacro(this, command == cmChoosePmacro);
-            saveSnippetUndo(before, caretBefore);
             tokensValid_ = false;
             updateMatchingBracket();
             drawView();
@@ -348,6 +414,12 @@ public:
     }
 
     bool recording() const { return recording_; }
+
+    void updateCommands() override {
+        TFileEditor::updateCommands();
+        setCmdState(cmUndo, Boolean(!undoHistory_.empty()));
+        setCmdState(cmRedo, Boolean(!redoHistory_.empty()));
+    }
 
     void setPersistentBlocks(bool enabled) {
         persistentBlocks_ = enabled;
@@ -1051,70 +1123,131 @@ private:
         pasteRectangle();
     }
 
-    struct SnippetUndo {
-        uint start = 0;
-        uint caret = 0;
-        std::string removed;
-        std::string inserted;
-        bool valid = false;
-    };
-
     static constexpr uint invalidPosition = std::numeric_limits<uint>::max();
     static constexpr size_t maxMacroEvents = 4096;
 
     static bool isUndo(const TEvent &event) {
-        return event.what == evCommand && event.message.command == cmUndo;
+        return (event.what == evCommand && event.message.command == cmUndo) ||
+               (event.what == evKeyDown && event.keyDown.keyCode == kbCtrlU);
     }
 
-    std::string bufferText() {
+    static bool isRedo(const TEvent &event) {
+        return (event.what == evCommand && event.message.command == cmRedo) ||
+               (event.what == evKeyDown &&
+                TKey(event.keyDown) == TKey(kbBack, kbAltShift | kbShift));
+    }
+
+    static HistoryKind historyKind(const TEvent &event) {
+        if (event.what == evKeyDown && event.keyDown.textLength > 0 &&
+            !(event.keyDown.controlKeyState & kbPaste))
+            return HistoryKind::typing;
+        if ((event.what == evKeyDown && event.keyDown.keyCode == kbBack) ||
+            (event.what == evCommand && event.message.command == cmBackSpace))
+            return HistoryKind::backspace;
+        if ((event.what == evKeyDown && event.keyDown.keyCode == kbDel) ||
+            (event.what == evCommand && event.message.command == cmDelChar))
+            return HistoryKind::forwardDelete;
+        return HistoryKind::other;
+    }
+
+    std::string textRange(uint start, uint end) {
         std::string text;
-        text.reserve(bufLen);
-        for (uint i = 0; i < bufLen; ++i)
+        start = std::min(start, bufLen);
+        end = std::min(end, bufLen);
+        text.reserve(end - start);
+        for (uint i = start; i < end; ++i)
             text.push_back(bufChar(i));
         return text;
     }
 
-    void saveSnippetUndo(const std::string &before, uint caret) {
-        const std::string after = bufferText();
-        if (before == after)
+    HistoryState historyState() const { return {curPtr, selStart, selEnd}; }
+
+    void beginHistory(HistoryKind kind) {
+        if (historyDepth_++ == 0)
+            activeHistory_ = {{}, historyState(), {}, kind, currentRevision_, currentRevision_};
+    }
+
+    void recordHistoryEdit(HistoryEdit edit) {
+        activeHistory_.edits.push_back(std::move(edit));
+    }
+
+    void endHistory() {
+        if (--historyDepth_ != 0 || activeHistory_.edits.empty())
             return;
-        size_t start = 0;
-        while (start < before.size() && start < after.size() && before[start] == after[start])
-            ++start;
-        size_t oldEnd = before.size();
-        size_t newEnd = after.size();
-        while (oldEnd > start && newEnd > start && before[oldEnd - 1] == after[newEnd - 1]) {
-            --oldEnd;
-            --newEnd;
+        activeHistory_.after = historyState();
+        redoHistory_.clear();
+        const bool merge = !undoHistory_.empty() &&
+            activeHistory_.kind != HistoryKind::other &&
+            undoHistory_.back().kind == activeHistory_.kind &&
+            undoHistory_.back().after.cursor == activeHistory_.before.cursor &&
+            undoHistory_.back().after.start == activeHistory_.before.start &&
+            undoHistory_.back().after.end == activeHistory_.before.end;
+        const uint64_t revision = ++nextRevision_;
+        if (merge) {
+            auto &previous = undoHistory_.back();
+            previous.edits.insert(previous.edits.end(),
+                                  std::make_move_iterator(activeHistory_.edits.begin()),
+                                  std::make_move_iterator(activeHistory_.edits.end()));
+            previous.after = activeHistory_.after;
+            previous.afterRevision = revision;
+        } else {
+            activeHistory_.afterRevision = revision;
+            undoHistory_.push_back(std::move(activeHistory_));
         }
-        snippetUndo_.start = static_cast<uint>(start);
-        snippetUndo_.caret = caret;
-        snippetUndo_.removed = before.substr(start, oldEnd - start);
-        snippetUndo_.inserted = after.substr(start, newEnd - start);
-        snippetUndo_.valid = true;
+        currentRevision_ = revision;
+        modified = currentRevision_ != savedRevision_;
+        updateCommands();
     }
 
-    bool canUndoSnippet() {
-        if (!snippetUndo_.valid || snippetUndo_.start + snippetUndo_.inserted.size() > bufLen)
-            return false;
-        for (size_t i = 0; i < snippetUndo_.inserted.size(); ++i)
-            if (bufChar(snippetUndo_.start + static_cast<uint>(i)) != snippetUndo_.inserted[i])
-                return false;
-        return true;
+    void restoreHistoryState(const HistoryState &state) {
+        const uint start = std::min(state.start, bufLen);
+        const uint end = std::min(state.end, bufLen);
+        setSelect(start, end, Boolean(state.cursor == start));
+        if (curPtr != std::min(state.cursor, bufLen))
+            setCurPtr(std::min(state.cursor, bufLen), 0);
     }
 
-    void undoSnippet() {
-        const SnippetUndo undo = std::move(snippetUndo_);
-        snippetUndo_ = {};
-        setSelect(undo.start, undo.start + static_cast<uint>(undo.inserted.size()), False);
-        if (undo.removed.empty())
-            deleteSelect();
-        else
-            insertText(undo.removed.data(), static_cast<uint>(undo.removed.size()), False);
-        setCurPtr(std::min<uint>(undo.caret, bufLen), 0);
+    void applyHistoryEdit(const HistoryEdit &edit, bool undo) {
+        const std::string &remove = undo ? edit.inserted : edit.removed;
+        const std::string &insert = undo ? edit.removed : edit.inserted;
+        const uint start = std::min(edit.position, bufLen);
+        setSelect(start, std::min<uint>(start + static_cast<uint>(remove.size()), bufLen), False);
+        TFileEditor::insertBuffer(insert.empty() ? nullptr : insert.data(), 0,
+                                  static_cast<uint>(insert.size()), False, False, True);
+    }
+
+    void undoHistory() {
+        if (undoHistory_.empty()) return;
+        HistoryEntry entry = std::move(undoHistory_.back());
+        undoHistory_.pop_back();
+        replayingHistory_ = true;
+        for (auto i = entry.edits.rbegin(); i != entry.edits.rend(); ++i)
+            applyHistoryEdit(*i, true);
+        replayingHistory_ = false;
+        restoreHistoryState(entry.before);
+        currentRevision_ = entry.beforeRevision;
+        modified = currentRevision_ != savedRevision_;
+        redoHistory_.push_back(std::move(entry));
+        tokensValid_ = false;
         trackCursor(True);
         updateCommands();
+    }
+
+    void redoHistory() {
+        if (redoHistory_.empty()) return;
+        HistoryEntry entry = std::move(redoHistory_.back());
+        redoHistory_.pop_back();
+        replayingHistory_ = true;
+        for (const auto &edit : entry.edits)
+            applyHistoryEdit(edit, false);
+        replayingHistory_ = false;
+        restoreHistoryState(entry.after);
+        currentRevision_ = entry.afterRevision;
+        modified = currentRevision_ != savedRevision_;
+        undoHistory_.push_back(std::move(entry));
         tokensValid_ = false;
+        trackCursor(True);
+        updateCommands();
     }
 
     static bool isEnter(const TEvent &event) {
@@ -1479,7 +1612,14 @@ private:
     std::vector<unsigned char> tokens_;
     std::vector<TEvent> macroEvents_;
     std::unordered_set<int> breakpointLines_;
-    SnippetUndo snippetUndo_;
+    std::vector<HistoryEntry> undoHistory_;
+    std::vector<HistoryEntry> redoHistory_;
+    HistoryEntry activeHistory_;
+    uint64_t nextRevision_ = 0;
+    uint64_t currentRevision_ = 0;
+    uint64_t savedRevision_ = 0;
+    unsigned historyDepth_ = 0;
+    bool replayingHistory_ = false;
     std::string rectClipboard_;
     uint marks_[10]{};
     bool markSet_[10]{};

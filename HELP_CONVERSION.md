@@ -38,6 +38,22 @@ TurboIDE-specific documentation before distributing a release. TurboIDE opens
 help by database path and numeric topic ID, allowing another database and
 contextual entry points without changing the viewer.
 
+## UI context IDs
+
+TurboIDE uses original Borland IDs as stable UI context IDs. F1 resolves the
+focused dialog control, window or menu item through Turbo Vision's `helpCtx`;
+a missing topic falls back to Contents (10030).
+
+| TurboIDE element | Context ID |
+| --- | ---: |
+| File, Edit, Search, Run, Compile, Debug, Project, Options, Window, Help menus | 411–420 |
+| Editor, Watches, Messages, Project windows | 402, 403, 405, 409 |
+| Find, Replace, Go to Line, Run Parameters, Add Watch dialogs | 562, 566, 568, 572, 590 |
+| Editor Options, Colors | 899, 915 |
+
+`Help → Contents` always opens Contents; Shift+F1 opens the alphabetical Index;
+Ctrl+F1 remains identifier lookup in the editor.
+
 ## References
 
 - Pinned Turbo Vision: `include/tvision/help.h`, `include/tvision/helpbase.h`,

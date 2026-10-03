@@ -88,7 +88,7 @@
 | Ctrl+Del / Shift+Del | Удалить выделение / вырезать выделение в Clipboard |
 | Ctrl+Ins / Shift+Ins | Копировать / вставить Clipboard |
 | Alt+[ / Alt+] | Перейти к парной скобке |
-| Alt+Shift+Backspace | Redo (команда отображается в меню; сейчас отключена приложением) |
+| Alt+Shift+Backspace | Redo |
 
 Дополнительные прямые команды выделения: Ctrl+Shift+B/K — начало/конец блока; C — копировать в Clipboard; H — скрыть/показать; X — вырезать; L/T — выделить строку/слово; I/U — увеличить/уменьшить отступ; M/O — верхний/нижний регистр; V — переместить; R/W — чтение/запись блока; Y — удалить до конца строки; Ctrl+Shift+Insert — заменить выделение из Clipboard. Цифры с Ctrl+Shift ставят метки, Ctrl+цифра переходит к метке.
 
@@ -98,7 +98,7 @@
 
 | Пункт | Идентификатор / API |
 |---|---|
-| Undo, Redo, Cut, Copy, Paste | `cmUndo`, `cmRedo`, `cmCut`, `cmCopy`, `cmPaste` → `TFileEditor::handleEvent` |
+| Undo, Redo, Cut, Copy, Paste | `cmUndo`, `cmRedo`, `cmCut`, `cmCopy`, `cmPaste` → `SyntaxEditor::handleEvent` |
 | Navigation | `cmPageDown`, `cmCharRight`, `cmLineUp`, `cmWordRight`, `cmSearchAgain`, `cmPageUp`, `cmCharLeft`, `cmLineDown`, `cmWordLeft`, `cmGoToLine`, `cmMatchBracket` |
 | Delete | `cmDelChar`, `cmBackSpace`, `cmDelWord`, `cmDelWordLeft`, `cmDelLine`, `cmDelStart/End`, `cmClear` → `TFileEditor::handleEvent` |
 | Insert | `cmNewLine`, `cmInsMode`, `cmIndentMode`, `cmExpandPmacro`, `cmChoosePmacro` |

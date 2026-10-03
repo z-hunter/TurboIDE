@@ -58,6 +58,7 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <mutex>
 #include <memory>
 #include <optional>
@@ -124,27 +125,40 @@ constexpr ushort cmHelp = 135;
 constexpr ushort cmColors = 136;
 constexpr ushort cmGoToLine = 145;
 
-// Contexts are local IDs; TMenuView supplies parent fallback for hcNoContext.
-constexpr ushort hcFileMenu = 1000;
-constexpr ushort hcEditMenu = 1001;
-constexpr ushort hcSearchMenu = 1002;
-constexpr ushort hcRunMenu = 1003;
-constexpr ushort hcCompileMenu = 1004;
-constexpr ushort hcDebugMenu = 1005;
-constexpr ushort hcProjectMenu = 1006;
-constexpr ushort hcToolsMenu = 1007;
-constexpr ushort hcOptionsMenu = 1008;
-constexpr ushort hcWindowMenu = 1009;
-constexpr ushort hcHelpMenu = 1010;
-constexpr ushort hcEnvironmentMenu = 1011;
-constexpr ushort hcEnvironmentPreferences = 1012;
-constexpr ushort hcEnvironmentEditor = 1013;
-constexpr ushort hcEnvironmentMouse = 1014;
-constexpr ushort hcEnvironmentStartup = 1015;
-constexpr ushort hcEnvironmentColors = 1016;
-constexpr ushort hcEditorDialog = 1017;
-constexpr ushort hcEditorTabSize = 1018;
-constexpr ushort hcEditorPersistentBlocks = 1019;
+// Borland TCHELP context IDs. Future TurboIDE documentation keeps these IDs.
+constexpr ushort hcEditWindow = 402;
+constexpr ushort hcWatchWindow = 403;
+constexpr ushort hcMessagesWindow = 405;
+constexpr ushort hcProjectWindow = 409;
+constexpr ushort hcFileMenu = 411;
+constexpr ushort hcEditMenu = 412;
+constexpr ushort hcSearchMenu = 413;
+constexpr ushort hcRunMenu = 414;
+constexpr ushort hcCompileMenu = 415;
+constexpr ushort hcDebugMenu = 416;
+constexpr ushort hcProjectMenu = 417;
+constexpr ushort hcOptionsMenu = 418;
+constexpr ushort hcWindowMenu = 419;
+constexpr ushort hcHelpMenu = 420;
+constexpr ushort hcToolsMenu = 757;
+constexpr ushort hcEnvironmentMenu = 736;
+constexpr ushort hcEnvironmentPreferences = 885;
+constexpr ushort hcEnvironmentEditor = 899;
+constexpr ushort hcEnvironmentMouse = 903;
+constexpr ushort hcEnvironmentStartup = 908;
+constexpr ushort hcEnvironmentColors = 915;
+constexpr ushort hcFindDialog = 562;
+constexpr ushort hcReplaceDialog = 566;
+constexpr ushort hcGoToLineDialog = 568;
+constexpr ushort hcRunParametersDialog = 572;
+constexpr ushort hcAddWatchDialog = 590;
+constexpr ushort hcEditorDialog = 899;
+constexpr ushort hcEditorTabSize = 899;
+constexpr ushort hcEditorPersistentBlocks = 899;
+constexpr ushort cmHelpContents = 176;
+constexpr ushort cmHelpIndex = 177;
+
+std::function<void(ushort)> contextHelpHandler;
 
 TMenuItem *disabledMenuItem(TMenuItem *item) {
     item->disabled = True;
@@ -157,6 +171,52 @@ class BuildProgressWindow;
 class ProjectFilesWindow;
 class DebugWatchesWindow;
 class DebugWatchWindow;
+
+class ContextHelpDialog : public TDialog {
+public:
+    ContextHelpDialog(const TRect &bounds, const char *title, ushort context)
+        : TWindowInit(&TWindow::initFrame), TDialog(bounds, title) { helpCtx = context; }
+
+    void handleEvent(TEvent &event) override {
+        TDialog::handleEvent(event);
+        if (event.what == evCommand && event.message.command == cmHelp) {
+            if (contextHelpHandler) contextHelpHandler(getHelpCtx());
+            clearEvent(event);
+        }
+    }
+};
+
+class ContextHelpFileDialog : public TFileDialog {
+public:
+    ContextHelpFileDialog(const char *wildCard, const char *title, const char *inputName,
+                          ushort options, ushort historyId, ushort context)
+        : TWindowInit(&TWindow::initFrame),
+          TFileDialog(wildCard, title, inputName, options, static_cast<uchar>(historyId)) {
+        helpCtx = context;
+    }
+
+    void handleEvent(TEvent &event) override {
+        TFileDialog::handleEvent(event);
+        if (event.what == evCommand && event.message.command == cmHelp) {
+            if (contextHelpHandler) contextHelpHandler(getHelpCtx());
+            clearEvent(event);
+        }
+    }
+};
+
+class ContextHelpColorDialog : public TColorDialog {
+public:
+    ContextHelpColorDialog(TPalette *palette, TColorGroup *groups, ushort context)
+        : TWindowInit(&TWindow::initFrame), TColorDialog(palette, groups) { helpCtx = context; }
+
+    void handleEvent(TEvent &event) override {
+        TColorDialog::handleEvent(event);
+        if (event.what == evCommand && event.message.command == cmHelp) {
+            if (contextHelpHandler) contextHelpHandler(getHelpCtx());
+            clearEvent(event);
+        }
+    }
+};
 
 class IDEStatusLine : public TStatusLine {
 public:
@@ -262,9 +322,6 @@ private:
         case hcEnvironmentMouse: return "Specify mouse settings";
         case hcEnvironmentStartup: return "Permanently change default startup options";
         case hcEnvironmentColors: return "Customize IDE colors for windows, menus, etc.";
-        case hcEditorDialog: return "Specify editor settings";
-        case hcEditorTabSize: return "Changes the number of columns to use for tab width";
-        case hcEditorPersistentBlocks: return "Selected block remains highlighted in cursor move";
         default: return "";
         }
     }
@@ -402,7 +459,7 @@ ushort execDialog(TDialog *dialog, void *data = nullptr) {
 }
 
 TDialog *createFindDialog() {
-    auto *dialog = new TDialog(TRect(0, 0, 38, 12), "Find");
+    auto *dialog = new ContextHelpDialog(TRect(0, 0, 38, 12), "Find", hcFindDialog);
     dialog->options |= ofCentered;
     auto *input = new TInputLine(TRect(3, 3, 32, 4), maxFindStrLen - 1);
     dialog->insert(input);
@@ -417,7 +474,7 @@ TDialog *createFindDialog() {
 }
 
 TDialog *createReplaceDialog() {
-    auto *dialog = new TDialog(TRect(0, 0, 40, 16), "Replace");
+    auto *dialog = new ContextHelpDialog(TRect(0, 0, 40, 16), "Replace", hcReplaceDialog);
     dialog->options |= ofCentered;
     auto *find = new TInputLine(TRect(3, 3, 34, 4), maxFindStrLen - 1);
     dialog->insert(find);
@@ -439,8 +496,9 @@ TDialog *createReplaceDialog() {
     return dialog;
 }
 
-TDialog *createSingleInputDialog(const char *title, const char *label, unsigned maxLength) {
-    auto *dialog = new TDialog(TRect(0, 0, 58, 10), title);
+TDialog *createSingleInputDialog(const char *title, const char *label, unsigned maxLength,
+                                 ushort context) {
+    auto *dialog = new ContextHelpDialog(TRect(0, 0, 58, 10), title, context);
     dialog->options |= ofCentered;
     auto *input = new TInputLine(TRect(3, 4, 55, 5), maxLength);
     dialog->insert(input);
@@ -453,9 +511,8 @@ TDialog *createSingleInputDialog(const char *title, const char *label, unsigned 
 
 TDialog *createEditorDialog(TInputLine *&tabs, TInputLine *&extension,
                             TCheckBoxes *&options) {
-    auto *dialog = new TDialog(TRect(0, 0, 76, 20), "Editor Options");
+    auto *dialog = new ContextHelpDialog(TRect(0, 0, 76, 20), "Editor Options", hcEditorDialog);
     dialog->options |= ofCentered;
-    dialog->helpCtx = hcEditorDialog;
     options = new TCheckBoxes(TRect(3, 3, 72, 10),
         new TSItem("Create backup ~f~iles",
         new TSItem("~I~nsert mode",
@@ -620,7 +677,8 @@ ushort editDialog(int dialog, ...) {
         result = messageBox("Save untitled file?", mfInformation | mfYesNoCancel);
         break;
     case edSaveAs:
-        result = execDialog(new TFileDialog("*.*", "Save file as", "~N~ame", fdOKButton, 101),
+        result = execDialog(new ContextHelpFileDialog("*.*", "Save file as", "~N~ame", fdOKButton, 101,
+                                                       hcFileMenu),
                             va_arg(args, char *));
         break;
     case edFind:
@@ -718,6 +776,8 @@ private:
     bool saveDesktopSession();
     void restoreDesktopSession();
     void showHelpContents(std::string_view word = {});
+    void showHelpContext(ushort context);
+    ushort activeHelpContext() const;
     void rememberProject();
     void showAbout();
 
@@ -805,6 +865,7 @@ public:
     ProjectFilesWindow(const TRect &bounds, TurboIDEApp *app, const Project *project,
                        short windowNumber)
         : TWindowInit(&TWindow::initFrame), TWindow(bounds, "Project", windowNumber), app_(app) {
+        helpCtx = hcProjectWindow;
         auto *bar = standardScrollBar(sbVertical | sbHandleKeyboard);
         list_ = new ProjectFileList(TRect(1, 1, size.x - 2, size.y - 1), bar, app, project);
         insert(list_);
@@ -1120,6 +1181,7 @@ public:
                         const std::vector<BuildMessage> *messages, short windowNumber)
         : TWindowInit(&TWindow::initFrame),
           TWindow(bounds, "Messages", windowNumber), app_(app) {
+        helpCtx = hcMessagesWindow;
         auto *horizontal = standardScrollBar(sbHorizontal | sbHandleKeyboard);
         auto *vertical = standardScrollBar(sbVertical | sbHandleKeyboard);
         horizontal->setStep(size.x - 2, 1);
@@ -1199,6 +1261,7 @@ public:
                        const std::vector<DebugVariable> *variables, short windowNumber)
         : TWindowInit(&TWindow::initFrame),
           TWindow(bounds, "Locals", windowNumber), app_(app) {
+        helpCtx = hcWatchWindow;
         list_ = new DebugVariableList(TRect(1, 1, size.x - 1, size.y - 1), variables);
         insert(list_);
         list_->updateVariables();
@@ -1240,6 +1303,7 @@ public:
     DebugWatchWindow(const TRect &bounds, TurboIDEApp *app,
                      const std::vector<DebugVariable> *variables, short windowNumber)
         : TWindowInit(&TWindow::initFrame), TWindow(bounds, "Watches", windowNumber), app_(app) {
+        helpCtx = hcWatchWindow;
         list_ = new DebugWatchList(TRect(1, 1, size.x - 1, size.y - 1), variables);
         insert(list_);
         list_->refresh();
@@ -1266,8 +1330,8 @@ TurboIDEApp::TurboIDEApp()
     : TProgInit(&TurboIDEApp::initStatusLine,
                 &TurboIDEApp::initMenuBar,
                 &TurboIDEApp::initDeskTop) {
-    disableCommand(cmRedo);
     disableCommand(cmNotReady);
+    contextHelpHandler = [this](ushort context) { showHelpContext(context); };
     TEditor::editorDialog = editDialog;
     SetConsoleCtrlHandler(handleBuildControlEvent, TRUE);
     ideScreenBuffer_ = CreateFileW(L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
@@ -1381,6 +1445,7 @@ TEditWindow *TurboIDEApp::openEditor(const char *fileName, const TRect *savedBou
     TView *view = validView(new SyntaxEditWindow(bounds, fileName ? fileName : "",
                                                   nextWindowNumber()));
     if (view) {
+        view->helpCtx = hcEditWindow;
         deskTop->insert(view);
         return dynamic_cast<TEditWindow *>(view);
     }
@@ -1430,7 +1495,8 @@ void TurboIDEApp::newEditor() {
 
 void TurboIDEApp::openFile() {
     char fileName[MAXPATH] = "*.*";
-    if (execDialog(new TFileDialog("*.*", "Open file", "~N~ame", fdOpenButton, 100), fileName)
+    if (execDialog(new ContextHelpFileDialog("*.*", "Open file", "~N~ame", fdOpenButton, 100,
+                                             hcFileMenu), fileName)
         == cmCancel)
         return;
 
@@ -1439,7 +1505,8 @@ void TurboIDEApp::openFile() {
 
 void TurboIDEApp::newProject() {
     char projectName[MAXPATH] = "*.prj";
-    if (execDialog(new TFileDialog("*.prj", "New project", "~N~ame", fdOKButton, 102), projectName)
+    if (execDialog(new ContextHelpFileDialog("*.prj", "New project", "~N~ame", fdOKButton, 102,
+                                             hcProjectMenu), projectName)
         == cmCancel)
         return;
 
@@ -1467,7 +1534,8 @@ void TurboIDEApp::newProject() {
 
 void TurboIDEApp::openProject() {
     char fileName[MAXPATH] = "*.prj";
-    if (execDialog(new TFileDialog("*.prj", "Open project", "~N~ame", fdOpenButton, 103), fileName)
+    if (execDialog(new ContextHelpFileDialog("*.prj", "Open project", "~N~ame", fdOpenButton, 103,
+                                             hcProjectMenu), fileName)
         == cmCancel)
         return;
 
@@ -1662,6 +1730,41 @@ void TurboIDEApp::showHelpContents(std::string_view word) {
     saveDesktopSession();
 }
 
+ushort TurboIDEApp::activeHelpContext() const {
+    if (menuBar && menuBar->getState(sfActive))
+        return menuBar->getHelpCtx();
+    return deskTop ? deskTop->getHelpCtx() : hcNoContext;
+}
+
+void TurboIDEApp::showHelpContext(ushort context) {
+    constexpr int contentsContext = 10030;
+    wchar_t executable[MAX_PATH]{};
+    const DWORD length = GetModuleFileNameW(nullptr, executable, MAX_PATH);
+    if (!length || length >= MAX_PATH) {
+        messageBox("Could not locate the Help database.", mfError | mfOKButton);
+        return;
+    }
+    const auto file = std::filesystem::path(executable).parent_path() / L"help" / L"tchelp.h32";
+    DesktopRect restoredBounds;
+    const DesktopRect* initialBounds = nullptr;
+    if (hasHelpBounds_) {
+        restoredBounds = saveRect(restoreRect(helpBounds_, deskTop->getExtent()));
+        initialBounds = &restoredBounds;
+    }
+    DesktopRect finalBounds;
+    const int topic = context == hcNoContext ? contentsContext : context;
+    auto error = openHelpDatabase(*this, file, topic, initialBounds, &finalBounds);
+    if (error && topic != contentsContext)
+        error = openHelpDatabase(*this, file, contentsContext, initialBounds, &finalBounds);
+    if (error) {
+        messageBox(error->c_str(), mfError | mfOKButton);
+        return;
+    }
+    hasHelpBounds_ = true;
+    helpBounds_ = finalBounds;
+    saveDesktopSession();
+}
+
 void TurboIDEApp::rememberProject() {
     settings_.lastProject = hasProject_ ? project_.file : std::filesystem::path{};
 }
@@ -1744,7 +1847,8 @@ void TurboIDEApp::openProjectItem() {
 void TurboIDEApp::addProjectItem() {
     if (!hasProject_) return;
     char fileName[MAXPATH] = "*.*";
-    if (execDialog(new TFileDialog("*.*", "Add item to project", "~N~ame", fdOpenButton, 118), fileName) == cmCancel)
+    if (execDialog(new ContextHelpFileDialog("*.*", "Add item to project", "~N~ame", fdOpenButton, 118,
+                                             hcProjectMenu), fileName) == cmCancel)
         return;
     Project updated = project_;
     const auto path = std::filesystem::absolute(std::filesystem::u8path(fileName)).lexically_normal();
@@ -1892,7 +1996,8 @@ void TurboIDEApp::editRunParameters() {
     char text[256]{};
     const auto formatted = formatArguments(current);
     std::snprintf(text, sizeof(text), "%s", formatted.c_str());
-    if (execDialog(createSingleInputDialog("Run parameters", "~P~arameters", 255), text) != cmOK)
+    if (execDialog(createSingleInputDialog("Run parameters", "~P~arameters", 255,
+                                           hcRunParametersDialog), text) != cmOK)
         return;
     const auto parsed = parseArguments(text);
     if (hasProject_) {
@@ -1915,7 +2020,7 @@ void TurboIDEApp::editRunDirectory() {
     const auto display = current.empty() ? std::string{} : current.u8string();
     std::snprintf(text, sizeof(text), "%s", display.c_str());
     if (execDialog(createSingleInputDialog("Run directory", "~D~irectory (empty = source/project directory)",
-                                           MAXPATH - 1), text) != cmOK)
+                                           MAXPATH - 1, hcRunMenu), text) != cmOK)
         return;
 
     std::filesystem::path directory;
@@ -2044,8 +2149,8 @@ void TurboIDEApp::editColors() {
             *new TColorItem("Input selected", 51) +
             *new TColorItem("List normal", 57) +
             *new TColorItem("List selected", 59);
-    auto *dialog = new TColorDialog(&ideTheme().application, &groups);
-    dialog->helpCtx = hcEnvironmentColors;
+    auto *dialog = new ContextHelpColorDialog(&ideTheme().application, &groups,
+                                               hcEnvironmentColors);
     TView *validDialog = TProgram::application->validView(dialog);
     if (!validDialog)
         return;
@@ -2243,7 +2348,7 @@ void TurboIDEApp::syncEditMenuState() {
     if (editMenuCommandsDisabled_ == hasEditor) {
         editMenuCommandsDisabled_ = !hasEditor;
         const ushort editCommands[] = {
-            cmUndo, cmCut, cmCopy, cmPaste, cmPageDown, cmCharRight, cmLineUp,
+            cmUndo, cmRedo, cmCut, cmCopy, cmPaste, cmPageDown, cmCharRight, cmLineUp,
             cmWordRight, cmSearchAgain, cmPageUp, cmCharLeft, cmLineDown,
             cmWordLeft, cmLineStart, cmLineEnd, cmTextStart, cmTextEnd,
             cmDelChar, cmBackSpace, cmDelWord, cmDelWordLeft, cmDelLine,
@@ -2306,7 +2411,8 @@ void TurboIDEApp::goToLine() {
         return;
     }
     char input[16] = {};
-    if (execDialog(createSingleInputDialog("Go to line", "~L~ine number", 10), input) != cmOK)
+    if (execDialog(createSingleInputDialog("Go to line", "~L~ine number", 10,
+                                           hcGoToLineDialog), input) != cmOK)
         return;
     char *end = nullptr;
     const long requested = std::strtol(input, &end, 10);
@@ -2450,7 +2556,8 @@ void TurboIDEApp::dismissWatch(DebugWatchWindow *window) {
 
 void TurboIDEApp::addWatch() {
     char expression[256]{};
-    if (execDialog(createSingleInputDialog("Add Watch", "~E~xpression", 250), expression) != cmOK)
+    if (execDialog(createSingleInputDialog("Add Watch", "~E~xpression", 250,
+                                           hcAddWatchDialog), expression) != cmOK)
         return;
     const std::string text(expression);
     if (text.empty() || text.find_first_of("\r\n") != std::string::npos) return;
@@ -2767,8 +2874,8 @@ bool TurboIDEApp::gotoMessage(size_t index) {
         char fileName[MAXPATH]{};
         const auto suggested = selected.file.filename().u8string();
         std::snprintf(fileName, sizeof(fileName), "%s", suggested.c_str());
-        if (execDialog(new TFileDialog("*.*", "Locate source file", "~N~ame",
-                                       fdOpenButton, 100), fileName) == cmCancel)
+        if (execDialog(new ContextHelpFileDialog("*.*", "Locate source file", "~N~ame",
+                                                  fdOpenButton, 100, hcMessagesWindow), fileName) == cmCancel)
             return false;
         selected.file = std::filesystem::u8path(fileName);
         opened = goToLocation(selected.file, selected.line, selected.column);
@@ -3097,7 +3204,13 @@ void TurboIDEApp::handleEvent(TEvent &event) {
         showAbout();
         break;
     case cmHelp:
+        showHelpContext(activeHelpContext());
+        break;
+    case cmHelpContents:
         showHelpContents();
+        break;
+    case cmHelpIndex:
+        showHelpContext(10031);
         break;
     default:
         return;
@@ -3169,10 +3282,7 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
                           *new TMenuItem("Replace block from clipboard", cmMenuReplaceSelect, kbNoKey,
                                          hcNoContext, "Ctrl+Shift+Ins") +
                           *new TMenuItem("Read block...", cmMenuReadBlock, kbNoKey, hcNoContext, "Ctrl+Shift+R") +
-                          *new TMenuItem("Write block...", cmMenuWriteBlock, kbNoKey, hcNoContext, "Ctrl+Shift+W"))) + newLine() +
-            *new TMenuItem("~R~ecord macro", cmRecordMacro, kbShiftF10, hcNoContext, "Shift-F10") +
-            *new TMenuItem("~S~top recording", cmStopMacro, kbAltF10, hcNoContext, "Alt-F10") +
-            *new TMenuItem("~P~lay macro", cmPlayMacro, kbCtrlF10, hcNoContext, "Ctrl-F10") +
+                          *new TMenuItem("Write block...", cmMenuWriteBlock, kbNoKey, hcNoContext, "Ctrl+Shift+W"))) +
         *new TSubMenu("~S~earch", kbAltS, hcSearchMenu) +
             *new TMenuItem("~F~ind...", cmFind, TKey(kbNoKey)) +
             *new TMenuItem("~R~eplace...", cmReplace, TKey(kbNoKey)) +
@@ -3205,6 +3315,13 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
             *new TMenuItem("~A~dd item...", cmProjectAdd, TKey(kbNoKey)) +
             *new TMenuItem("~D~elete item", cmProjectDelete, TKey(kbNoKey)) +
         *new TSubMenu("~T~ools", kbAltT, hcToolsMenu) +
+            *new TMenuItem("Mac~r~os", kbNoKey,
+                new TMenu(*new TMenuItem("~R~ecord macro", cmRecordMacro, kbShiftF10,
+                                         hcNoContext, "Shift-F10") +
+                          *new TMenuItem("~S~top recording", cmStopMacro, kbAltF10,
+                                         hcNoContext, "Alt-F10") +
+                          *new TMenuItem("~P~lay macro", cmPlayMacro, kbCtrlF10,
+                                         hcNoContext, "Ctrl-F10"))) + newLine() +
             *new TMenuItem("~M~essages", cmShowMessages, kbShiftF11, hcNoContext, "Shift-F11") +
             *new TMenuItem("Goto ~n~ext message", cmNextMessage, kbAltF8, hcNoContext, "Alt-F8") +
             *new TMenuItem("Goto ~p~revious message", cmPrevMessage, kbAltF7, hcNoContext, "Alt-F7") +
@@ -3230,7 +3347,8 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
             *new TMenuItem("C~l~ose", cmClose, kbAltF3, hcNoContext, "Alt-F3") +
             *new TMenuItem("~L~ist all...", cmWindowList, kbAlt0, hcNoContext, "Alt+0") +
         *new TSubMenu("~H~elp", kbAltH, hcHelpMenu) +
-            *new TMenuItem("~C~ontents", cmHelp, TKey(kbNoKey)) +
+            *new TMenuItem("~C~ontents", cmHelpContents, TKey(kbNoKey), 516) +
+            *new TMenuItem("~I~ndex", cmHelpIndex, kbShiftF1, 10031, "Shift-F1") +
             *new TMenuItem("~A~bout", cmAbout, TKey(kbNoKey)));
 }
 
@@ -3239,6 +3357,7 @@ TStatusLine *TurboIDEApp::initStatusLine(TRect r) {
     return new IDEStatusLine(r,
         *new TStatusDef(0, 0xFFFF) +
             *new TStatusItem("~F1~ Help", kbF1, cmHelp) +
+            *new TStatusItem("~Shift-F1~ Index", kbShiftF1, cmHelpIndex) +
             *new TStatusItem("~F7~ Trace", kbF7, cmDebugStepInto) +
             *new TStatusItem("~F8~ Step", kbF8, cmDebugStepOver) +
             *new TStatusItem("~F9~ Make", kbF9, cmBuild) +

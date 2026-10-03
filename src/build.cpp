@@ -50,6 +50,20 @@ std::wstring compilerPath() {
     return path;
 }
 
+std::filesystem::path bundledConioDirectory() {
+    std::wstring executable(MAX_PATH, L'\0');
+    const DWORD length = GetModuleFileNameW(nullptr, executable.data(),
+                                            static_cast<DWORD>(executable.size()));
+    if (!length || length >= executable.size())
+        return {};
+    executable.resize(length);
+    const auto directory = std::filesystem::path(executable).parent_path() / L"conio";
+    return std::filesystem::is_regular_file(directory / L"conio.h") &&
+                   std::filesystem::is_regular_file(directory / L"coniow.c")
+               ? directory
+               : std::filesystem::path{};
+}
+
 bool appendNumber(std::wstring_view value, int &number) {
     if (value.empty())
         return false;
@@ -190,12 +204,17 @@ BuildResult runBuild(const BuildRequest &request, const std::atomic_bool &cancel
     addArg(command, L"-O0");
     addArg(command, L"-Wall");
     addArg(command, L"-Wextra");
+    const auto conioDirectory = bundledConioDirectory();
+    if (!conioDirectory.empty())
+        addArg(command, L"-I" + conioDirectory.wstring());
     for (const auto &path : request.includeDirs)
         addArg(command, L"-I" + path.wstring());
     for (const auto &define : request.defines)
         addArg(command, L"-D" + define);
     for (const auto &source : request.sources)
         addArg(command, source.wstring());
+    if (!conioDirectory.empty())
+        addArg(command, (conioDirectory / L"coniow.c").wstring());
     for (const auto &library : request.libraries)
         addArg(command, library.compare(0, 2, L"-l") == 0 ? library : L"-l" + library);
     addArg(command, L"-o");

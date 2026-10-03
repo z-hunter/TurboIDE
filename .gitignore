@@ -5,4 +5,7 @@ out/
 .turboide-build/
 *.user
 *.suo
+*.bak
+*.prj
+*.dsk
 /reference/

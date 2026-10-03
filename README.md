@@ -1,10 +1,11 @@
 # TurboIDE
 
-Консольная IDE для C в стиле Borland Turbo C. Интерфейс собран на Turbo Vision; исходники пользователя компилируются MinGW-w64 GCC.
+A console IDE for C in the style of Borland Turbo C. Its interface is built on
+Turbo Vision; user sources are compiled with MinGW-w64 GCC.
 
-## Сборка IDE
+## Building the IDE
 
-В PowerShell из папки проекта:
+From the project directory in PowerShell:
 
 ```powershell
 cmake -S . -B .build/ide -G "Visual Studio 17 2022" -A x64
@@ -12,9 +13,13 @@ cmake --build .build/ide --config Release --target turboide
 .\.build\ide\Release\turboide.exe
 ```
 
-CMake при первой настройке скачивает из [magiblot/tvision](https://github.com/magiblot/tvision) закреплённую в `CMakeLists.txt` ревизию Turbo Vision через `FetchContent`. Отдельно устанавливать или вручную добавлять include- и library-файлы не нужно; для первой настройки требуется доступ к GitHub.
+On the first configuration, CMake downloads the Turbo Vision revision pinned in
+`CMakeLists.txt` from [magiblot/tvision](https://github.com/magiblot/tvision)
+through `FetchContent`. No separate installation or manual include/library setup
+is needed; GitHub access is required for the first configuration.
 
-Если Turbo Vision уже скачан или нужен локальный checkout, передайте CMake путь к его корню через `FETCHCONTENT_SOURCE_DIR_TVISION`:
+If Turbo Vision has already been downloaded, or if a local checkout is needed,
+pass its root directory to CMake through `FETCHCONTENT_SOURCE_DIR_TVISION`:
 
 ```powershell
 git clone https://github.com/magiblot/tvision.git C:/dev/tvision
@@ -23,40 +28,62 @@ cmake -S . -B .build/ide-local -G "Visual Studio 17 2022" -A x64 `
 cmake --build .build/ide-local --config Release --target turboide
 ```
 
-Указывайте корневую папку репозитория `tvision` — ту, где находится `CMakeLists.txt`. TurboIDE применяет небольшие совместимые правки к исходникам Turbo Vision во время конфигурации CMake, поэтому используйте закреплённую в `CMakeLists.txt` ревизию или проверьте совместимость новой версии. Путь с пробелами задавайте в кавычках.
+Point to the root of the `tvision` repository—the directory containing
+`CMakeLists.txt`. TurboIDE applies small compatibility patches to Turbo Vision
+sources while CMake configures, so use the revision pinned in `CMakeLists.txt`
+or verify a newer version first. Quote paths containing spaces.
 
-## Историческая справка Turbo C++
+## Turbo C++ historical reference
 
-**Help → Contents** открывает временную историческую базу помощи Borland,
-которую CMake копирует в `help/tchelp.h32` рядом с `turboide.exe`.
-В редакторе Ctrl+F1 открывает статью по идентификатору под курсором через
-алфавитный указатель этой базы. F1 по-прежнему открывает Contents.
-Инструкции по конвертации `TCHELP.TCH`, сборке TVHC и установке `.h32` находятся
-в [HELP_CONVERSION.md](HELP_CONVERSION.md). Документация Borland описывает
-старый компилятор; TurboIDE использует GCC/GDB.
+**Help → Contents** opens a temporary historical Borland help database that
+CMake copies to `help/tchelp.h32` beside `turboide.exe`. In the editor,
+Ctrl+F1 looks up the identifier under the cursor through the database's
+alphabetical index. F1 still opens contextual help. Instructions for converting
+`TCHELP.TCH`, building TVHC, and installing the `.h32` file are in
+[HELP_CONVERSION.md](HELP_CONVERSION.md). Borland documentation describes its
+old compiler; TurboIDE uses GCC/GDB.
 
-## Компилятор GCC
+## GCC compiler
 
-IDE ищет `gcc.exe` в `PATH`. Для явного пути в текущем PowerShell:
+The IDE looks for `gcc.exe` in `PATH`. To provide an explicit path in the
+current PowerShell session:
 
 ```powershell
 $env:TURBOIDE_GCC = "C:\tools\w64devkit\bin\gcc.exe"
 .\.build\ide\Release\turboide.exe
 ```
 
-Укажите x64 MinGW-w64 GCC. Имена пользователя с Unicode в исходном файле поддерживаются GCC; linker получает относительное ASCII имя результата внутри `.turboide-build`.
+Use an x64 MinGW-w64 GCC. GCC supports Unicode user names in source paths; the
+linker receives a relative ASCII output name inside `.turboide-build`.
 
-## Команды сборки
+### Borland `conio.h` compatibility
 
-- `Alt+F9` — скомпилировать текущий сохранённый `.c`.
-- `F9` — собрать открытый проект; если проект не загружен, собирается текущий `.c`.
-- При ошибках окно Messages открывается автоматически. Стрелки и пробел отслеживают выбранную строку; Enter переходит в исходник и закрывает окно. **F11** открывает Project, **Shift+F11** — Messages, **F12** — Compiler Messages.
-- Перед сборкой изменённые файлы можно сохранить, продолжить по версиям на диске или отменить сборку.
-- Результат находится в `.turboide-build\program.exe` в рабочем каталоге исходника или проекта. Этот каталог исключён из Git.
+The release includes the GCC-adapted `coniow` implementation. TurboIDE adds it
+to every user C build, so legacy sources can use either `#include <conio.h>` or
+`#include <coniow.h>` without project configuration.
 
-Чтобы создать проект, выберите **Project → New project...** в папке проекта, затем добавьте исходные файлы через **Project → Add item...**. IDE не изменяет существующий `.prj` при создании проекта с уже занятым именем. Проектный файл обычно лежит в корне проекта; можно создать или открыть проект в любом доступном каталоге через файловый диалог. Файл использует текстовый формат TurboIDE, а не бинарный формат Borland.
+## Build commands
 
-Пример UTF-8 файла проекта:
+- `Alt+F9` compiles the current saved `.c` file.
+- `F9` builds the open project; when no project is loaded, it builds the current
+  `.c` file.
+- On errors, the Messages window opens automatically. Arrow keys and Space
+  track the selected line; Enter navigates to the source and closes the window.
+  **F11** opens Project, **Shift+F11** opens Messages, and **F12** opens
+  Compiler Messages.
+- Before building, modified files can be saved, built from their on-disk
+  versions, or the build can be cancelled.
+- The result is `.turboide-build\program.exe` in the source or project working
+  directory. This directory is excluded from Git.
+
+To create a project, choose **Project → New project...** in the project
+directory, then add source files with **Project → Add item...**. The IDE does
+not modify an existing `.prj` when creating a project whose name is already in
+use. A project file normally lives in the project root; the file dialog can
+create or open a project in any accessible directory. The file uses TurboIDE's
+text format, not Borland's binary format.
+
+Example UTF-8 project file:
 
 ```text
 source=src/main.c
@@ -66,22 +93,43 @@ define=USE_FAST_MATH
 library=user32
 ```
 
-Пути относительны к папке `.prj`. `source` можно указывать несколько раз; `include` добавляет каталог заголовков; `define` передаётся компилятору как `-D`; `library=foo` — как `-lfoo` (также принимается готовый аргумент `-lfoo`). Аргументы запуска задаются повторяемыми строками `arg=...`; каталог запуска — строкой `rundir=...`.
+Paths are relative to the `.prj` directory. `source` may occur more than once;
+`include` adds a header directory; `define` is passed as `-D`; and
+`library=foo` is passed as `-lfoo` (a complete `-lfoo` argument is accepted as
+well). Program arguments use repeated `arg=...` lines; the runtime directory
+uses `rundir=...`.
 
-**File → Change dir...** задаёт текущий каталог IDE. Он сохраняется в настройках и служит корнем файловых диалогов и новых файлов; он не ограничивает открытие проекта другим каталогом. Сессию конкретного проекта IDE хранит рядом с `.prj` в одноимённом `.dsk`: открытые файлы, положение окон, курсоры, активное окно, breakpoints и выражения Watches. При следующем открытии проекта эта сессия восстанавливается. Формат `.dsk` — текстовый формат TurboIDE, он не совместим с двоичными desktop-файлами FPC.
+**File → Change dir...** sets TurboIDE's current directory. It is stored in
+settings and is the root for file dialogs and new files; it does not prevent
+opening a project in a different directory. The IDE stores each project's
+session beside its `.prj` in a same-named `.dsk`: open files, window positions,
+cursors, active window, breakpoints, and Watch expressions. The session is
+restored the next time the project is opened. `.dsk` is TurboIDE's text format;
+it is not compatible with FPC binary desktop files.
 
-Сборка использует `-g -O0 -Wall -Wextra`, чтобы последующий отладчик GDB видел символы и переменные.
+Builds use `-g -O0 -Wall -Wextra` so the subsequent GDB session can see symbols
+and variables.
 
-## Отладка
+## Debugging
 
-- **Debug → Start debugging** собирает текущий файл или проект и запускает GDB. Укажите `gdb.exe` через `TURBOIDE_GDB` или добавьте его в `PATH`.
-- **F4** продолжает выполнение, **F7** выполняет шаг с заходом, **F8** — шаг с обходом, **Ctrl+F2** останавливает отладку, **Ctrl+F8** переключает breakpoint на текущей строке.
-- **Ctrl+F7** добавляет Watch; **Ctrl+F4** повторно вычисляет Watches. В окне Watches клавиша **Del** удаляет выбранное выражение. Значения обновляются на остановках; TurboIDE запрещает запись в память и явные обращения к регистрам. GDB 9.1+ также блокирует вызовы функций, поэтому поддерживает произвольные выражения; более старые версии принимают только простые имена переменных.
-- Locals и Watches отображаются в отдельных окнах. При остановке IDE показывает строку и значения; **Alt+F5** позволяет посмотреть экран программы.
+- **Debug → Start debugging** builds the current file or project and starts GDB.
+  Set `TURBOIDE_GDB` to `gdb.exe`, or add it to `PATH`.
+- **F4** continues, **F7** steps into, **F8** steps over, **Ctrl+F2** stops
+  debugging, and **Ctrl+F8** toggles a breakpoint on the current line.
+- **Ctrl+F7** adds a Watch; **Ctrl+F4** reevaluates Watches. In the Watches
+  window, **Del** removes the selected expression. Values update whenever the
+  debugger stops; TurboIDE prohibits memory writes and explicit register access.
+  GDB 9.1+ also blocks function calls, so it supports arbitrary expressions;
+  older versions accept only simple variable names.
+- Locals and Watches appear in separate windows. When execution stops, the IDE
+  shows the source line and values; **Alt+F5** displays the program screen.
 
-## Запуск и экран программы
+## Running and the user screen
 
-- `Ctrl+F9` собирает актуальные файлы и запускает программу.
-- Программа получает консольный ввод/вывод; после её завершения IDE возвращает экран и окно редактора, из которого вызван запуск.
-- `Alt+F5` показывает User Screen. Нажмите Enter, чтобы открыть там `cmd.exe`; команда `exit` закрывает shell. `Alt+F5` или Esc возвращает IDE.
-- Для аргументов проекта добавляйте по одному `arg=значение` на строку `.prj`; каждое значение становится одним аргументом `argv`.
+- `Ctrl+F9` builds the current files and runs the program.
+- The program receives console input/output; after it exits, the IDE restores
+  the screen and editor window from which it was launched.
+- `Alt+F5` displays the User Screen. Press Enter to open `cmd.exe` there; use
+  `exit` to close the shell. `Alt+F5` or Esc returns to the IDE.
+- For project arguments, add one `arg=value` per `.prj` line; each value becomes
+  one `argv` argument.

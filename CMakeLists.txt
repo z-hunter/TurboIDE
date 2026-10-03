@@ -99,10 +99,73 @@ if(_tv_format_already_patched EQUAL -1)
     file(WRITE "${_tv_editor_header}" "${_tv_editor_patched}")
 endif()
 
+# Let SyntaxEditor record every buffer mutation and mark its save point.
+set(_tv_editor_header "${tvision_SOURCE_DIR}/include/tvision/editors.h")
+set(_tv_editor_source "${tvision_SOURCE_DIR}/source/tvision/teditor2.cpp")
+file(READ "${_tv_editor_header}" _tv_undo_header_text)
+file(READ "${_tv_editor_source}" _tv_undo_editor_text)
+set(_tv_insert_header_old [=[    Boolean insertBuffer( const char *, uint, uint, Boolean, Boolean );]=])
+set(_tv_insert_header_new [=[    virtual Boolean insertBuffer( const char *, uint, uint, Boolean, Boolean, Boolean raw = False );]=])
+set(_tv_insert_source_old [=[Boolean TEditor::insertBuffer( const char *p,
+                               uint offset,
+                               uint length,
+                               Boolean allowUndo,
+                               Boolean selectText
+                             )]=])
+set(_tv_insert_source_new [=[Boolean TEditor::insertBuffer( const char *p,
+                               uint offset,
+                               uint length,
+                               Boolean allowUndo,
+                               Boolean selectText,
+                               Boolean raw
+                             )]=])
+set(_tv_insert_length_old [=[    uint insLen = lengthWithConvertedLineEndings( p, length );]=])
+set(_tv_insert_length_new [=[    uint insLen = raw ? length : lengthWithConvertedLineEndings( p, length );]=])
+set(_tv_insert_copy_old [=[    if( length > 0 )
+        copyAndConvertLineEndings( &buffer[curPtr], &p[offset], length );]=])
+set(_tv_insert_copy_new [=[    if( length > 0 )
+        if( raw )
+            memcpy( &buffer[curPtr], &p[offset], length );
+        else
+            copyAndConvertLineEndings( &buffer[curPtr], &p[offset], length );]=])
+set(_tv_save_header_old [=[    Boolean saveFile() noexcept;]=])
+set(_tv_save_header_new [=[    virtual Boolean saveFile() noexcept;]=])
+foreach(_tv_undo_header_pair insert_header save_header)
+    set(_tv_old "${_tv_${_tv_undo_header_pair}_old}")
+    set(_tv_new "${_tv_${_tv_undo_header_pair}_new}")
+    string(FIND "${_tv_undo_header_text}" "${_tv_new}" _tv_patched)
+    if(_tv_patched EQUAL -1)
+        string(REPLACE "${_tv_old}" "${_tv_new}" _tv_undo_header_text "${_tv_undo_header_text}")
+    endif()
+endforeach()
+foreach(_tv_undo_source_pair insert_source insert_length insert_copy)
+    set(_tv_old "${_tv_${_tv_undo_source_pair}_old}")
+    set(_tv_new "${_tv_${_tv_undo_source_pair}_new}")
+    string(FIND "${_tv_undo_editor_text}" "${_tv_new}" _tv_patched)
+    if(_tv_patched EQUAL -1)
+        string(REPLACE "${_tv_old}" "${_tv_new}" _tv_undo_editor_text "${_tv_undo_editor_text}")
+    endif()
+endforeach()
+string(FIND "${_tv_undo_header_text}" "${_tv_insert_header_new}" _tv_insert_header_found)
+string(FIND "${_tv_undo_header_text}" "${_tv_save_header_new}" _tv_save_header_found)
+string(FIND "${_tv_undo_editor_text}" "${_tv_insert_source_new}" _tv_insert_source_found)
+string(FIND "${_tv_undo_editor_text}" "${_tv_insert_length_new}" _tv_insert_length_found)
+string(FIND "${_tv_undo_editor_text}" "${_tv_insert_copy_new}" _tv_insert_copy_found)
+if(_tv_insert_header_found EQUAL -1 OR _tv_save_header_found EQUAL -1 OR
+   _tv_insert_source_found EQUAL -1 OR _tv_insert_length_found EQUAL -1 OR _tv_insert_copy_found EQUAL -1)
+    message(FATAL_ERROR "Turbo Vision undo extension patch did not match the pinned source.")
+endif()
+file(WRITE "${_tv_editor_header}" "${_tv_undo_header_text}")
+file(WRITE "${_tv_editor_source}" "${_tv_undo_editor_text}")
+
 add_executable(turboide src/main.cpp src/build.cpp src/project.cpp src/run.cpp src/debugger.cpp src/syntax.cpp src/editor_features.cpp src/settings.cpp src/desktop_session.cpp src/legacy_help.cpp)
 target_compile_features(turboide PRIVATE cxx_std_17)
 target_link_libraries(turboide PRIVATE tvision)
 add_custom_command(TARGET turboide POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:turboide>/conio"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/added"
+            "$<TARGET_FILE_DIR:turboide>/conio"
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:turboide>/cfgfiles"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/reference/SetsEd/cfgfiles/pmacros.pmc"
@@ -144,6 +207,9 @@ if(TURBOIDE_BUILD_TESTS)
     add_executable(editor_selection_test tests/editor_selection_test.cpp)
     target_compile_features(editor_selection_test PRIVATE cxx_std_17)
     target_link_libraries(editor_selection_test PRIVATE tvision)
+    add_executable(editor_undo_test tests/editor_undo_test.cpp)
+    target_compile_features(editor_undo_test PRIVATE cxx_std_17)
+    target_link_libraries(editor_undo_test PRIVATE tvision)
     add_executable(desktop_session_test tests/desktop_session_test.cpp src/desktop_session.cpp)
     target_compile_features(desktop_session_test PRIVATE cxx_std_17)
 endif()
