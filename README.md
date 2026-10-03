@@ -1,4 +1,4 @@
-# Retro-Turbo-IDE
+# Retro-Turbo-IDE [WIP]
 
 A console IDE in the style of **Borland Turbo C**. Its interface is built on
 modern Turbo Vision port; user sources are compiled with MinGW-w64 GCC.
