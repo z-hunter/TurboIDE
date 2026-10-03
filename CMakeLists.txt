@@ -99,7 +99,7 @@ if(_tv_format_already_patched EQUAL -1)
     file(WRITE "${_tv_editor_header}" "${_tv_editor_patched}")
 endif()
 
-add_executable(turboide src/main.cpp src/build.cpp src/project.cpp src/run.cpp src/debugger.cpp src/syntax.cpp src/editor_features.cpp src/settings.cpp src/desktop_session.cpp)
+add_executable(turboide src/main.cpp src/build.cpp src/project.cpp src/run.cpp src/debugger.cpp src/syntax.cpp src/editor_features.cpp src/settings.cpp src/desktop_session.cpp src/legacy_help.cpp)
 target_compile_features(turboide PRIVATE cxx_std_17)
 target_link_libraries(turboide PRIVATE tvision)
 add_custom_command(TARGET turboide POST_BUILD
@@ -110,10 +110,29 @@ add_custom_command(TARGET turboide POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/reference/SetsEd/cfgfiles/cpmacros.pmc"
             "$<TARGET_FILE_DIR:turboide>/cfgfiles/cpmacros.pmc"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:turboide>/help"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/reference/TCHELP.h32"
+            "$<TARGET_FILE_DIR:turboide>/help/tchelp.h32"
     VERBATIM
 )
 if(MSVC)
     target_compile_options(turboide PRIVATE /utf-8)
+endif()
+
+option(TURBOIDE_BUILD_HELP_TOOLS "Build optional legacy help conversion tools" OFF)
+if(TURBOIDE_BUILD_HELP_TOOLS)
+    add_executable(tvhc "${tvision_SOURCE_DIR}/examples/tvhc/tvhc.cpp")
+    target_link_libraries(tvhc PRIVATE tvision)
+    target_include_directories(tvhc PRIVATE "${tvision_SOURCE_DIR}/include/tvision/compat/borland")
+    target_compile_features(tvhc PRIVATE cxx_std_17)
+
+    add_executable(tch_to_tvhc tools/tch_to_tvhc.cpp)
+    target_compile_features(tch_to_tvhc PRIVATE cxx_std_17)
+
+    add_executable(help_database_check tests/help_database_check.cpp src/legacy_help.cpp)
+    target_link_libraries(help_database_check PRIVATE tvision)
+    target_compile_features(help_database_check PRIVATE cxx_std_17)
 endif()
 
 option(TURBOIDE_BUILD_TESTS "Build TurboIDE integration tests" OFF)
@@ -125,4 +144,6 @@ if(TURBOIDE_BUILD_TESTS)
     add_executable(editor_selection_test tests/editor_selection_test.cpp)
     target_compile_features(editor_selection_test PRIVATE cxx_std_17)
     target_link_libraries(editor_selection_test PRIVATE tvision)
+    add_executable(desktop_session_test tests/desktop_session_test.cpp src/desktop_session.cpp)
+    target_compile_features(desktop_session_test PRIVATE cxx_std_17)
 endif()

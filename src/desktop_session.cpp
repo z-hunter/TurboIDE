@@ -59,6 +59,8 @@ bool loadDesktopSession(const std::filesystem::path &projectFile, DesktopSession
     while (std::getline(input, line)) {
         if (line.rfind("project=", 0) == 0) {
             loaded.hasProjectBounds = readRect(std::string_view(line).substr(8), loaded.projectBounds);
+        } else if (line.rfind("help=", 0) == 0) {
+            loaded.hasHelpBounds = readRect(std::string_view(line).substr(5), loaded.helpBounds);
         } else if (line.rfind("active=", 0) == 0) {
             loaded.activeFile = root / std::filesystem::u8path(line.substr(7));
         } else if (line.rfind("editor=", 0) == 0) {
@@ -101,6 +103,7 @@ bool saveDesktopSession(const std::filesystem::path &projectFile, const DesktopS
     if (!output) return false;
     output << "# TurboIDE desktop session v1\n";
     if (session.hasProjectBounds) output << "project=" << writeRect(session.projectBounds) << "\n";
+    if (session.hasHelpBounds) output << "help=" << writeRect(session.helpBounds) << "\n";
     if (!session.activeFile.empty())
         output << "active=" << toUtf8(storedPath(session.activeFile, root)) << "\n";
     for (const auto &editor : session.editors) {

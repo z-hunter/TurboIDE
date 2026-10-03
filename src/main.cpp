@@ -39,6 +39,7 @@
 #include "debugger.h"
 #include "desktop_session.h"
 #include "editor_features.h"
+#include "legacy_help.h"
 #include "project.h"
 #include "run.h"
 #include "settings.h"
@@ -561,6 +562,34 @@ TRect restoreRect(const DesktopRect &saved, const TRect &extent) {
     return TRect(left, top, static_cast<short>(left + width), static_cast<short>(top + height));
 }
 
+std::string identifierAtCursor(TEditor &editor) {
+    auto identifierChar = [](unsigned char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+               (c >= '0' && c <= '9') || c == '_' || c == '#' || c == '.';
+    };
+    uint position = editor.curPtr;
+    if (position >= editor.bufLen ||
+        !identifierChar(static_cast<unsigned char>(editor.bufChar(position)))) {
+        if (position == 0 ||
+            !identifierChar(static_cast<unsigned char>(editor.bufChar(position - 1))))
+            return {};
+        --position;
+    }
+    uint first = position;
+    while (first > 0 && identifierChar(static_cast<unsigned char>(editor.bufChar(first - 1))))
+        --first;
+    uint last = position + 1;
+    while (last < editor.bufLen &&
+           identifierChar(static_cast<unsigned char>(editor.bufChar(last))))
+        ++last;
+    const unsigned char leading = static_cast<unsigned char>(editor.bufChar(first));
+    if ((leading >= '0' && leading <= '9') || first == last) return {};
+    std::string word;
+    word.reserve(last - first);
+    for (uint i = first; i < last; ++i) word.push_back(editor.bufChar(i));
+    return word;
+}
+
 ushort editDialog(int dialog, ...) {
     va_list args;
     va_start(args, dialog);
@@ -688,12 +717,15 @@ private:
     void closeUnusedUntitledEditors();
     bool saveDesktopSession();
     void restoreDesktopSession();
+    void showHelpContents(std::string_view word = {});
     void rememberProject();
     void showAbout();
 
     Project project_;
     ProjectFilesWindow *projectWindow_ = nullptr;
     bool hasProject_ = false;
+    bool hasHelpBounds_ = false;
+    DesktopRect helpBounds_;
     bool editMenuCommandsDisabled_ = false;
     bool buildRunning_ = false;
     std::thread buildThread_;
@@ -1507,6 +1539,8 @@ bool TurboIDEApp::saveDesktopSession() {
         session.hasProjectBounds = true;
         session.projectBounds = saveRect(projectWindow_->getBounds());
     }
+    session.hasHelpBounds = hasHelpBounds_;
+    session.helpBounds = helpBounds_;
     const auto root = project_.file.parent_path();
     for (TView *view = deskTop->first(); view; view = view->nextView()) {
         auto *window = dynamic_cast<TEditWindow *>(view);
@@ -1537,6 +1571,7 @@ bool TurboIDEApp::saveDesktopSession() {
 
 void TurboIDEApp::restoreDesktopSession() {
     if (!hasProject_) return;
+    hasHelpBounds_ = false;
     DesktopSession session;
     if (!loadDesktopSession(project_.file, session)) return;
     for (const auto &breakpoint : session.breakpoints)
@@ -1544,6 +1579,8 @@ void TurboIDEApp::restoreDesktopSession() {
             .insert(breakpoint.second);
     watchExpressions_ = std::move(session.watches);
     const TRect extent = deskTop->getExtent();
+    hasHelpBounds_ = session.hasHelpBounds;
+    helpBounds_ = session.helpBounds;
     if (projectWindow_ && session.hasProjectBounds) {
         auto bounds = restoreRect(session.projectBounds, extent);
         projectWindow_->locate(bounds);
@@ -1596,6 +1633,33 @@ void TurboIDEApp::restoreDesktopSession() {
         if (found != breakpoints_.end()) lines.assign(found->second.begin(), found->second.end());
         setEditorDebugState(editor->editor, lines, 0);
     }
+}
+
+void TurboIDEApp::showHelpContents(std::string_view word) {
+    wchar_t executable[MAX_PATH]{};
+    const DWORD length = GetModuleFileNameW(nullptr, executable, MAX_PATH);
+    if (!length || length >= MAX_PATH) {
+        messageBox("Could not locate the Help database.", mfError | mfOKButton);
+        return;
+    }
+    const auto file = std::filesystem::path(executable).parent_path() / L"help" / L"tchelp.h32";
+    DesktopRect restoredBounds;
+    const DesktopRect* initialBounds = nullptr;
+    if (hasHelpBounds_) {
+        restoredBounds = saveRect(restoreRect(helpBounds_, deskTop->getExtent()));
+        initialBounds = &restoredBounds;
+    }
+    DesktopRect finalBounds;
+    const auto error = word.empty() ?
+        openHelpDatabase(*this, file, 10030, initialBounds, &finalBounds) :
+        openHelpDatabaseForWord(*this, file, word, 10031, initialBounds, &finalBounds);
+    if (error) {
+        messageBox(error->c_str(), mfError | mfOKButton);
+        return;
+    }
+    hasHelpBounds_ = true;
+    helpBounds_ = finalBounds;
+    saveDesktopSession();
 }
 
 void TurboIDEApp::rememberProject() {
@@ -2816,7 +2880,17 @@ void TurboIDEApp::handleEvent(TEvent &event) {
     syncEditMenuState();
     if (event.what == evKeyDown && (!TProgram::application ||
         TProgram::application->current == TProgram::deskTop)) {
-        if (event.keyDown.keyCode == kbCtrlJ) {
+        if (event.keyDown.keyCode == kbCtrlF1) {
+            if (auto *window = currentEditorWindow()) {
+                const std::string word = identifierAtCursor(*window->editor);
+                clearEvent(event);
+                if (word.empty())
+                    messageBox("Place the cursor on an identifier for Help.", mfInformation | mfOKButton);
+                else
+                    showHelpContents(word);
+                return;
+            }
+        } else if (event.keyDown.keyCode == kbCtrlJ) {
             if (currentEditorWindow()) {
                 clearEvent(event);
                 goToLine();
@@ -3023,7 +3097,7 @@ void TurboIDEApp::handleEvent(TEvent &event) {
         showAbout();
         break;
     case cmHelp:
-        messageBox("This command will be available in a later stage.", mfInformation | mfOKButton);
+        showHelpContents();
         break;
     default:
         return;
@@ -3156,6 +3230,7 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
             *new TMenuItem("C~l~ose", cmClose, kbAltF3, hcNoContext, "Alt-F3") +
             *new TMenuItem("~L~ist all...", cmWindowList, kbAlt0, hcNoContext, "Alt+0") +
         *new TSubMenu("~H~elp", kbAltH, hcHelpMenu) +
+            *new TMenuItem("~C~ontents", cmHelp, TKey(kbNoKey)) +
             *new TMenuItem("~A~bout", cmAbout, TKey(kbNoKey)));
 }
 

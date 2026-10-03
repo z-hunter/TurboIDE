@@ -22,6 +22,8 @@ struct EditorSession {
 struct DesktopSession {
     bool hasProjectBounds = false;
     DesktopRect projectBounds;
+    bool hasHelpBounds = false;
+    DesktopRect helpBounds;
     std::vector<EditorSession> editors;
     std::filesystem::path activeFile;
     std::vector<std::pair<std::filesystem::path, int>> breakpoints;
