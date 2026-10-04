@@ -9,6 +9,7 @@
 #define Uses_TEditWindow
 #define Uses_TEditor
 #define Uses_TEvent
+#define Uses_TEventQueue
 #define Uses_TFileDialog
 #define Uses_TFileEditor
 #define Uses_TInputLine
@@ -874,6 +875,7 @@ private:
     std::thread buildThread_;
     std::mutex buildMutex_;
     std::optional<BuildResult> finishedBuild_;
+    std::vector<BuildMessage> pendingBuildMessages_;
     std::vector<BuildMessage> messages_;
     BuildMessagesWindow *messagesWindow_ = nullptr;
     BuildProgressWindow *buildPopup_ = nullptr;
@@ -1056,6 +1058,9 @@ public:
         std::snprintf(line, sizeof(line), "%u", errors_);
         writeStr(36, 7, line, 1);
         writeStr(49, 7, line, 1);
+        writeStr(4, 8, "Current output:", 1);
+        std::snprintf(line, sizeof(line), "%.*s", 50, currentOutput_.c_str());
+        writeStr(4, 9, line, 1);
         if (programBytes_ == 0) {
             writeStr(4, 10, "Program size: n/a", 1);
         } else {
@@ -1093,6 +1098,13 @@ public:
         drawView();
     }
 
+    void setProgress(std::string output, unsigned warnings, unsigned errors) {
+        currentOutput_ = std::move(output);
+        warnings_ = warnings;
+        errors_ = errors;
+        drawView();
+    }
+
     void handleEvent(TEvent &event) override {
         if (event.what == evKeyDown) {
             if (appSuccess_) {
@@ -1115,6 +1127,7 @@ private:
     size_t totalLines_ = 0;
     size_t mainFileLines_ = 0;
     std::uintmax_t programBytes_ = 0;
+    std::string currentOutput_ = "Waiting for GCC...";
 };
 
 size_t countLines(const std::filesystem::path &file) {
@@ -2337,6 +2350,10 @@ void TurboIDEApp::startBuild(BuildRequest request, bool runAfterBuild,
     if ((runAfterBuild || debugAfterBuild) && !request.sources.empty())
         runReturnFile_ = std::filesystem::absolute(request.sources.front()).lexically_normal();
     clearMessages();
+    {
+        std::lock_guard<std::mutex> lock(buildMutex_);
+        pendingBuildMessages_.clear();
+    }
     messages_.push_back({"Building with GCC...", {}, 0, 0, false});
     messageIndex_ = messages_.size();
     if (messagesWindow_)
@@ -2349,7 +2366,7 @@ void TurboIDEApp::startBuild(BuildRequest request, bool runAfterBuild,
             nextWindowNumber());
         deskTop->insert(messagesWindow_);
     }
-    messagesWindow_->hide();
+    messagesWindow_->show();
     const TRect extent = deskTop->getExtent();
     constexpr short popupWidth = 60;
     constexpr short popupHeight = 14;
@@ -2380,15 +2397,24 @@ void TurboIDEApp::startBuild(BuildRequest request, bool runAfterBuild,
         buildThread_ = std::thread([this, request = std::move(request)]() mutable {
             BuildResult result;
             try {
-                result = runBuild(request, buildCancelRequested);
+                result = runBuild(request, buildCancelRequested, [this](BuildMessage message) {
+                    {
+                        std::lock_guard<std::mutex> lock(buildMutex_);
+                        pendingBuildMessages_.push_back(std::move(message));
+                    }
+                    TEventQueue::wakeUp();
+                });
             } catch (const std::exception &exception) {
                 result.error = exception.what();
             } catch (...) {
                 result.error = "Unexpected error while building.";
             }
             buildControlHandlerActive.store(false);
-            std::lock_guard<std::mutex> lock(buildMutex_);
-            finishedBuild_ = std::move(result);
+            {
+                std::lock_guard<std::mutex> lock(buildMutex_);
+                finishedBuild_ = std::move(result);
+            }
+            TEventQueue::wakeUp();
         });
     } catch (const std::exception &exception) {
         buildRunning_ = false;
@@ -2933,12 +2959,27 @@ void TurboIDEApp::idle() {
         activateProject(project);
     }
     std::optional<BuildResult> finished;
+    std::vector<BuildMessage> pendingMessages;
     {
         std::lock_guard<std::mutex> lock(buildMutex_);
+        pendingMessages.swap(pendingBuildMessages_);
         if (finishedBuild_) {
             finished = std::move(finishedBuild_);
             finishedBuild_.reset();
         }
+    }
+    if (!pendingMessages.empty()) {
+        messages_.insert(messages_.end(), std::make_move_iterator(pendingMessages.begin()),
+                         std::make_move_iterator(pendingMessages.end()));
+        messageIndex_ = messages_.size();
+        for (const auto &message : pendingMessages) {
+            buildWarnings_ += message.text.find("warning:") != std::string::npos;
+            buildErrors_ += message.text.find("error:") != std::string::npos;
+        }
+        if (buildPopup_)
+            buildPopup_->setProgress(pendingMessages.back().text, buildWarnings_, buildErrors_);
+        if (messagesWindow_)
+            messagesWindow_->updateMessages();
     }
     if (finished) {
         if (buildThread_.joinable())

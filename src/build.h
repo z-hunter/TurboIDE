@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <atomic>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -41,4 +42,7 @@ struct BuildRequest {
     std::vector<std::wstring> libraries;
 };
 
-BuildResult runBuild(const BuildRequest &request, const std::atomic_bool &cancelRequested);
+using BuildOutputCallback = std::function<void(BuildMessage)>;
+
+BuildResult runBuild(const BuildRequest &request, const std::atomic_bool &cancelRequested,
+                     const BuildOutputCallback &onOutput = {});

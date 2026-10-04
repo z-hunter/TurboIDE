@@ -194,7 +194,8 @@ void addArg(std::wstring &command, const std::wstring &arg) {
 }
 }
 
-BuildResult runBuild(const BuildRequest &request, const std::atomic_bool &cancelRequested) {
+BuildResult runBuild(const BuildRequest &request, const std::atomic_bool &cancelRequested,
+                     const BuildOutputCallback &onOutput) {
     BuildResult result;
     const std::wstring compiler = compilerPath(request);
     if (compiler.empty()) {
@@ -260,6 +261,10 @@ BuildResult runBuild(const BuildRequest &request, const std::atomic_bool &cancel
         addArg(command, library.compare(0, 2, L"-l") == 0 ? library : L"-l" + library);
     addArg(command, L"-o");
     addArg(command, L".turboide-build\\program.exe");
+    BuildMessage commandMessage{"$ " + toUtf8(command)};
+    result.messages.push_back(commandMessage);
+    if (onOutput)
+        onOutput(std::move(commandMessage));
 
     SECURITY_ATTRIBUTES security{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
     HANDLE readPipe = nullptr, writePipe = nullptr;
@@ -289,7 +294,29 @@ BuildResult runBuild(const BuildRequest &request, const std::atomic_bool &cancel
     }
 
     result.started = true;
-    std::string output;
+    std::string pendingOutput;
+    const auto consumeOutput = [&](bool flush) {
+        size_t start = 0;
+        while (start < pendingOutput.size()) {
+            const size_t end = pendingOutput.find('\n', start);
+            if (end == std::string::npos && !flush)
+                break;
+            const size_t stop = end == std::string::npos ? pendingOutput.size() : end;
+            auto line = std::string_view(pendingOutput).substr(start, stop - start);
+            if (!line.empty() && line.back() == '\r')
+                line.remove_suffix(1);
+            BuildMessage message = parseMessage(line, request.workingDirectory);
+            result.messages.push_back(message);
+            if (onOutput)
+                onOutput(std::move(message));
+            if (end == std::string::npos) {
+                start = pendingOutput.size();
+                break;
+            }
+            start = end + 1;
+        }
+        pendingOutput.erase(0, start);
+    };
     char buffer[4096];
     bool canceled = false;
     for (;;) {
@@ -301,8 +328,10 @@ BuildResult runBuild(const BuildRequest &request, const std::atomic_bool &cancel
         if (PeekNamedPipe(readPipe, nullptr, 0, nullptr, &available, nullptr) && available > 0) {
             DWORD bytesRead = 0;
             const DWORD requestBytes = std::min<DWORD>(available, sizeof(buffer));
-            if (ReadFile(readPipe, buffer, requestBytes, &bytesRead, nullptr) && bytesRead > 0)
-                output.append(buffer, bytesRead);
+            if (ReadFile(readPipe, buffer, requestBytes, &bytesRead, nullptr) && bytesRead > 0) {
+                pendingOutput.append(buffer, bytesRead);
+                consumeOutput(false);
+            }
             continue;
         }
         if (WaitForSingleObject(process.hProcess, 50) == WAIT_OBJECT_0) {
@@ -316,18 +345,7 @@ BuildResult runBuild(const BuildRequest &request, const std::atomic_bool &cancel
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
 
-    size_t start = 0;
-    while (start < output.size()) {
-        const size_t end = output.find('\n', start);
-        const size_t stop = end == std::string::npos ? output.size() : end;
-        auto line = std::string_view(output).substr(start, stop - start);
-        if (!line.empty() && line.back() == '\r')
-            line.remove_suffix(1);
-        result.messages.push_back(parseMessage(line, request.workingDirectory));
-        if (end == std::string::npos)
-            break;
-        start = end + 1;
-    }
+    consumeOutput(true);
     if (canceled)
         result.error = "Build canceled by Ctrl-Break.";
     if (result.messages.empty() && result.error.empty())
