@@ -10,6 +10,16 @@
 #include <utility>
 
 namespace {
+bool isCxxSource(const std::filesystem::path &source) {
+    const auto extension = source.extension().c_str();
+    return _wcsicmp(extension, L".cc") == 0 || _wcsicmp(extension, L".cpp") == 0 ||
+           _wcsicmp(extension, L".cxx") == 0;
+}
+
+bool isCSource(const std::filesystem::path &source) {
+    return _wcsicmp(source.extension().c_str(), L".c") == 0;
+}
+
 std::wstring quote(const std::wstring &argument) {
     std::wstring result = L"\"";
     size_t slashes = 0;
@@ -32,20 +42,28 @@ std::wstring quote(const std::wstring &argument) {
 }
 
 std::wstring compilerPath(const BuildRequest &request) {
-    if (!request.compilerPath.empty())
-        return request.compilerPath.wstring();
+    const bool cxx = std::any_of(request.sources.begin(), request.sources.end(), isCxxSource);
+    if (!request.compilerPath.empty()) {
+        if (!cxx || _wcsicmp(request.compilerPath.filename().c_str(), L"g++.exe") == 0)
+            return request.compilerPath.wstring();
+        const auto cxxCompiler = request.compilerPath.parent_path() / L"g++.exe";
+        return std::filesystem::is_regular_file(cxxCompiler) ? cxxCompiler.wstring() : std::wstring{};
+    }
     DWORD required = GetEnvironmentVariableW(L"TURBOIDE_GCC", nullptr, 0);
     if (required) {
         std::wstring path(required, L'\0');
         const DWORD length = GetEnvironmentVariableW(L"TURBOIDE_GCC", path.data(), required);
         if (length && length < required) {
             path.resize(length);
-            return path;
+            if (!cxx)
+                return path;
+            const auto cxxCompiler = std::filesystem::path(path).parent_path() / L"g++.exe";
+            return std::filesystem::is_regular_file(cxxCompiler) ? cxxCompiler.wstring() : std::wstring{};
         }
     }
 
     std::wstring path(32768, L'\0');
-    const DWORD length = SearchPathW(nullptr, L"gcc.exe", nullptr,
+    const DWORD length = SearchPathW(nullptr, cxx ? L"g++.exe" : L"gcc.exe", nullptr,
                                      static_cast<DWORD>(path.size()), path.data(), nullptr);
     if (!length || length >= path.size())
         return {};
@@ -180,11 +198,11 @@ BuildResult runBuild(const BuildRequest &request, const std::atomic_bool &cancel
     BuildResult result;
     const std::wstring compiler = compilerPath(request);
     if (compiler.empty()) {
-        result.error = "GCC was not found. Configure it in Options > Compiler, set TURBOIDE_GCC, or add gcc.exe to PATH.";
+        result.error = "GCC/G++ was not found. Configure the toolchain in Options > Compiler, set TURBOIDE_GCC, or add it to PATH.";
         return result;
     }
     if (request.sources.empty()) {
-        result.error = "No C source files to compile.";
+        result.error = "No C or C++ source files to compile.";
         return result;
     }
 
@@ -214,10 +232,30 @@ BuildResult runBuild(const BuildRequest &request, const std::atomic_bool &cancel
         addArg(command, L"-I" + path.wstring());
     for (const auto &define : request.defines)
         addArg(command, L"-D" + define);
-    for (const auto &source : request.sources)
+    const bool cxx = std::any_of(request.sources.begin(), request.sources.end(), isCxxSource);
+    for (const auto &source : request.sources) {
+        const bool cSource = cxx && isCSource(source);
+        if (cSource)
+            addArg(command, L"-x");
+        if (cSource)
+            addArg(command, L"c");
         addArg(command, source.wstring());
-    if (!conioDirectory.empty())
+        if (cSource)
+            addArg(command, L"-x");
+        if (cSource)
+            addArg(command, L"none");
+    }
+    if (!conioDirectory.empty()) {
+        if (cxx) {
+            addArg(command, L"-x");
+            addArg(command, L"c");
+        }
         addArg(command, (conioDirectory / L"coniow.c").wstring());
+        if (cxx) {
+            addArg(command, L"-x");
+            addArg(command, L"none");
+        }
+    }
     for (const auto &library : request.libraries)
         addArg(command, library.compare(0, 2, L"-l") == 0 ? library : L"-l" + library);
     addArg(command, L"-o");

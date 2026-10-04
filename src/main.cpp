@@ -1999,14 +1999,22 @@ bool TurboIDEApp::saveBuildInputs(const BuildRequest &request) {
 
 void TurboIDEApp::compileCurrent(bool runAfterBuild, bool debugAfterBuild) {
     auto *window = dynamic_cast<TEditWindow *>(deskTop->current);
+    if (!window)
+        for (TView *view = deskTop->first(); view; view = view->nextView())
+            if ((window = dynamic_cast<TEditWindow *>(view)) && window->editor->fileName[0])
+                break;
     if (!window || !window->editor->fileName[0]) {
-        messageBox("Save the current C source file before compiling.", mfError | mfOKButton);
+        messageBox("Save the current C or C++ source file before compiling.", mfError | mfOKButton);
         return;
     }
     const auto source = std::filesystem::absolute(
         std::filesystem::u8path(window->editor->fileName)).lexically_normal();
-    if (_wcsicmp(source.extension().c_str(), L".c") != 0) {
-        messageBox("The current file is not a .c source file.", mfError | mfOKButton);
+    const auto extension = source.extension().wstring();
+    if (_wcsicmp(extension.c_str(), L".c") != 0 &&
+        _wcsicmp(extension.c_str(), L".cc") != 0 &&
+        _wcsicmp(extension.c_str(), L".cpp") != 0 &&
+        _wcsicmp(extension.c_str(), L".cxx") != 0) {
+        messageBox("The current file is not a C or C++ source file.", mfError | mfOKButton);
         return;
     }
     BuildRequest request;
@@ -2326,12 +2334,8 @@ void TurboIDEApp::startBuild(BuildRequest request, bool runAfterBuild,
     runArguments_ = std::move(runArguments);
     runWorkingDirectory_ = runDirectory.empty() ? request.workingDirectory : std::move(runDirectory);
     runReturnFile_.clear();
-    if (runAfterBuild || debugAfterBuild) {
-        auto *window = dynamic_cast<TEditWindow *>(deskTop->current);
-        if (window && window->editor->fileName[0])
-            runReturnFile_ = std::filesystem::absolute(
-                std::filesystem::u8path(window->editor->fileName)).lexically_normal();
-    }
+    if ((runAfterBuild || debugAfterBuild) && !request.sources.empty())
+        runReturnFile_ = std::filesystem::absolute(request.sources.front()).lexically_normal();
     clearMessages();
     messages_.push_back({"Building with GCC...", {}, 0, 0, false});
     messageIndex_ = messages_.size();
