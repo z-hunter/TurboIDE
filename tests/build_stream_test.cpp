@@ -5,6 +5,7 @@
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <string>
 #include <vector>
 
 int main() {
@@ -23,13 +24,21 @@ int main() {
     request.compilerPath = compiler;
     request.workingDirectory = directory;
     request.sources.push_back(directory / L"fake.c");
+    request.includeDirs.push_back(directory / L"headers");
+    request.libraryDirs.push_back(directory / L"libraries");
+    request.sourceDirs.push_back(directory / L"sources");
     std::atomic_bool canceled{false};
     std::vector<std::chrono::steady_clock::time_point> received;
-    const auto result = runBuild(request, canceled, [&](BuildMessage) {
+    std::vector<std::string> messages;
+    const auto result = runBuild(request, canceled, [&](BuildMessage message) {
         received.push_back(std::chrono::steady_clock::now());
+        messages.push_back(std::move(message.text));
     });
     std::filesystem::remove_all(directory);
     return result.succeeded && received.size() == 3 &&
-                   received[2] - received[1] >= std::chrono::milliseconds(100)
+                   received[2] - received[1] >= std::chrono::milliseconds(100) &&
+                   messages[0].find("-I") != std::string::npos &&
+                   messages[0].find("-L") != std::string::npos &&
+                   messages[0].find("-iquote") != std::string::npos
                ? 0 : 1;
 }

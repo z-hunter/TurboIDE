@@ -231,6 +231,10 @@ BuildResult runBuild(const BuildRequest &request, const std::atomic_bool &cancel
         addArg(command, L"-I" + conioDirectory.wstring());
     for (const auto &path : request.includeDirs)
         addArg(command, L"-I" + path.wstring());
+    for (const auto &path : request.sourceDirs) {
+        addArg(command, L"-iquote");
+        addArg(command, path.wstring());
+    }
     for (const auto &define : request.defines)
         addArg(command, L"-D" + define);
     const bool cxx = std::any_of(request.sources.begin(), request.sources.end(), isCxxSource);
@@ -257,6 +261,8 @@ BuildResult runBuild(const BuildRequest &request, const std::atomic_bool &cancel
             addArg(command, L"none");
         }
     }
+    for (const auto &path : request.libraryDirs)
+        addArg(command, L"-L" + path.wstring());
     for (const auto &library : request.libraries)
         addArg(command, library.compare(0, 2, L"-l") == 0 ? library : L"-l" + library);
     addArg(command, L"-o");

@@ -38,6 +38,8 @@ struct BuildRequest {
     std::filesystem::path compilerPath;
     std::vector<std::filesystem::path> sources;
     std::vector<std::filesystem::path> includeDirs;
+    std::vector<std::filesystem::path> libraryDirs;
+    std::vector<std::filesystem::path> sourceDirs;
     std::vector<std::wstring> defines;
     std::vector<std::wstring> libraries;
 };

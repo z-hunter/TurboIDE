@@ -26,6 +26,9 @@ std::string toUtf8(const std::filesystem::path &path) {
 }
 
 void loadSettings(IDESettings &settings) {
+    settings.includeDirs.clear();
+    settings.libraryDirs.clear();
+    settings.sourceDirs.clear();
     std::ifstream input(fileName(), std::ios::binary);
     std::string line;
     while (std::getline(input, line)) {
@@ -45,6 +48,12 @@ void loadSettings(IDESettings &settings) {
                 settings.compilerType = "gcc";
         } else if (line.rfind("compiler_path=", 0) == 0) {
             settings.compilerPath = std::filesystem::u8path(line.substr(14));
+        } else if (line.rfind("include_dir=", 0) == 0) {
+            settings.includeDirs.push_back(std::filesystem::u8path(line.substr(12)));
+        } else if (line.rfind("library_dir=", 0) == 0) {
+            settings.libraryDirs.push_back(std::filesystem::u8path(line.substr(12)));
+        } else if (line.rfind("source_dir=", 0) == 0) {
+            settings.sourceDirs.push_back(std::filesystem::u8path(line.substr(11)));
         } else if (line.rfind("current_directory=", 0) == 0) {
             settings.currentDirectory = std::filesystem::u8path(line.substr(18));
         } else if (line.rfind("last_project=", 0) == 0) {
@@ -67,6 +76,12 @@ void saveSettings(const IDESettings &settings) {
     output << "compiler_type=gcc\n";
     if (!settings.compilerPath.empty())
         output << "compiler_path=" << toUtf8(settings.compilerPath) << "\n";
+    for (const auto &directory : settings.includeDirs)
+        output << "include_dir=" << toUtf8(directory) << "\n";
+    for (const auto &directory : settings.libraryDirs)
+        output << "library_dir=" << toUtf8(directory) << "\n";
+    for (const auto &directory : settings.sourceDirs)
+        output << "source_dir=" << toUtf8(directory) << "\n";
     if (!settings.currentDirectory.empty())
         output << "current_directory=" << toUtf8(settings.currentDirectory) << "\n";
     if (!settings.lastProject.empty())

@@ -128,6 +128,10 @@ constexpr ushort cmColors = 136;
 constexpr ushort cmGoToLine = 145;
 constexpr ushort cmCompiler = 178;
 constexpr ushort cmCompilerBrowse = 179;
+constexpr ushort cmDirectories = 180;
+constexpr ushort cmDirectoriesBrowseHeaders = 181;
+constexpr ushort cmDirectoriesBrowseLibraries = 182;
+constexpr ushort cmDirectoriesBrowseSources = 183;
 
 // Borland TCHELP context IDs. Future TurboIDE documentation keeps these IDs.
 constexpr ushort hcEditWindow = 402;
@@ -202,6 +206,55 @@ public:
             clearEvent(event);
         }
     }
+};
+
+class DirectoriesDialog final : public ContextHelpDialog {
+public:
+    DirectoriesDialog(const TRect &bounds)
+        : TWindowInit(&TWindow::initFrame), ContextHelpDialog(bounds, "Directories", hcOptionsMenu) {}
+
+    void handleEvent(TEvent &event) override {
+        ContextHelpDialog::handleEvent(event);
+        if (event.what == evCommand && event.message.command >= cmDirectoriesBrowseHeaders &&
+            event.message.command <= cmDirectoriesBrowseSources) {
+            endModal(event.message.command);
+            clearEvent(event);
+        }
+    }
+};
+
+class DirectoryPickerDialog final : public TChDirDialog {
+public:
+    DirectoryPickerDialog(std::filesystem::path &directory, const char *instruction)
+        : TWindowInit(&TWindow::initFrame), TChDirDialog(cdNormal, 209), directory_(directory) {
+        growTo(68, 20);
+        auto *cancel = new TButton(TRect(55, 15, 65, 17), "Cancel", cmCancel, bfNormal);
+        cancel->growMode = gfGrowLoX | gfGrowHiX;
+        insert(cancel);
+        insert(new TStaticText(TRect(2, 18, 66, 19), instruction));
+    }
+
+    Boolean valid(ushort command) override {
+        if (!TChDirDialog::valid(command) || command != cmOK)
+            return command != cmOK;
+        std::error_code error;
+        directory_ = std::filesystem::current_path(error);
+        return !error;
+    }
+
+    void handleEvent(TEvent &event) override {
+        if ((event.what == evKeyDown && event.keyDown.keyCode == kbEsc) ||
+            (event.what == evCommand &&
+             (event.message.command == cmCancel || event.message.command == cmClose))) {
+            endModal(cmCancel);
+            clearEvent(event);
+            return;
+        }
+        TChDirDialog::handleEvent(event);
+    }
+
+private:
+    std::filesystem::path &directory_;
 };
 
 class ToolchainDirectoryDialog final : public TChDirDialog {
@@ -632,6 +685,78 @@ TDialog *createCompilerDialog(TInputLine *&path) {
     return dialog;
 }
 
+constexpr size_t directoryTextSize = 2048;
+
+std::string directoryListText(const std::vector<std::filesystem::path> &directories) {
+    std::string text;
+    for (const auto &directory : directories) {
+        if (!text.empty()) text += ';';
+        const auto value = directory.u8string();
+        text.append(value.begin(), value.end());
+    }
+    return text;
+}
+
+void appendDirectoryText(char *text, size_t size, const std::filesystem::path &directory) {
+    std::string value(text);
+    if (!value.empty()) value += ';';
+    const auto path = directory.u8string();
+    value.append(path.begin(), path.end());
+    std::snprintf(text, size, "%s", value.c_str());
+}
+
+bool parseDirectoryList(const char *text, const char *kind,
+                        std::vector<std::filesystem::path> &directories) {
+    directories.clear();
+    std::string value(text);
+    size_t offset = 0;
+    while (offset <= value.size()) {
+        const size_t end = value.find(';', offset);
+        const std::string item = value.substr(offset, end - offset);
+        const size_t first = item.find_first_not_of(" \t");
+        if (first != std::string::npos) {
+            const size_t last = item.find_last_not_of(" \t");
+            std::error_code error;
+            auto directory = std::filesystem::absolute(
+                std::filesystem::u8path(item.substr(first, last - first + 1)), error);
+            if (error || !std::filesystem::is_directory(directory, error)) {
+                const std::string message = "Select existing " + std::string(kind) +
+                                            " directories, separated by semicolons.";
+                messageBox(message.c_str(), mfError | mfOKButton);
+                return false;
+            }
+            directories.push_back(directory.lexically_normal());
+        }
+        if (end == std::string::npos) break;
+        offset = end + 1;
+    }
+    return true;
+}
+
+TDialog *createDirectoriesDialog(TInputLine *&headers, TInputLine *&libraries,
+                                 TInputLine *&sources) {
+    auto *dialog = new DirectoriesDialog(TRect(0, 0, 78, 19));
+    dialog->options |= ofCentered;
+    dialog->insert(new TStaticText(TRect(3, 2, 74, 3),
+        "Additional folders only; separate several folders with semicolons."));
+    headers = new TInputLine(TRect(3, 5, 61, 6), directoryTextSize - 1);
+    dialog->insert(headers);
+    dialog->insert(new TLabel(TRect(3, 4, 30, 5), "~H~eader directories", headers));
+    dialog->insert(new TButton(TRect(63, 5, 74, 7), "~B~rowse", cmDirectoriesBrowseHeaders, bfNormal));
+    libraries = new TInputLine(TRect(3, 9, 61, 10), directoryTextSize - 1);
+    dialog->insert(libraries);
+    dialog->insert(new TLabel(TRect(3, 8, 31, 9), "~L~ibrary directories", libraries));
+    dialog->insert(new TButton(TRect(63, 9, 74, 11), "Browse", cmDirectoriesBrowseLibraries, bfNormal));
+    sources = new TInputLine(TRect(3, 13, 61, 14), directoryTextSize - 1);
+    dialog->insert(sources);
+    dialog->insert(new TLabel(TRect(3, 12, 31, 13), "~S~ource directories", sources));
+    dialog->insert(new TButton(TRect(63, 13, 74, 15), "Browse", cmDirectoriesBrowseSources, bfNormal));
+    dialog->insert(new TButton(TRect(44, 16, 54, 18), "O~K~", cmOK, bfDefault));
+    dialog->insert(new TButton(TRect(58, 16, 69, 18), "Cancel", cmCancel, bfNormal));
+    dialog->selectNext(False);
+    return dialog;
+}
+
 std::wstring utf8ToWide(std::string_view text) {
     if (text.empty()) return {};
     const int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(),
@@ -854,6 +979,7 @@ private:
     void changeDirectory();
     void editEnvironment();
     void editCompiler();
+    void editDirectories();
     void editColors();
     bool activateProject(const std::filesystem::path &file, bool showWindow = true);
     void closeUnusedUntitledEditors();
@@ -1058,18 +1184,15 @@ public:
         std::snprintf(line, sizeof(line), "%u", errors_);
         writeStr(36, 7, line, 1);
         writeStr(49, 7, line, 1);
-        writeStr(4, 8, "Current output:", 1);
-        std::snprintf(line, sizeof(line), "%.*s", 50, currentOutput_.c_str());
-        writeStr(4, 9, line, 1);
         if (programBytes_ == 0) {
-            writeStr(4, 10, "Program size: n/a", 1);
+            writeStr(4, 8, "Program size: n/a", 1);
         } else {
             std::snprintf(line, sizeof(line), "Program size: %llu bytes",
                           static_cast<unsigned long long>(programBytes_));
-            writeStr(4, 10, line, 1);
+            writeStr(4, 8, line, 1);
         }
 
-        constexpr short statusY = 12;
+        constexpr short statusY = 10;
         const TColorAttr statusColor = ideTheme().buildStatus;
         const short width = size.x - 2;
         std::vector<TScreenCell> status(static_cast<size_t>(width),
@@ -1098,8 +1221,7 @@ public:
         drawView();
     }
 
-    void setProgress(std::string output, unsigned warnings, unsigned errors) {
-        currentOutput_ = std::move(output);
+    void setProgress(unsigned warnings, unsigned errors) {
         warnings_ = warnings;
         errors_ = errors;
         drawView();
@@ -1127,7 +1249,6 @@ private:
     size_t totalLines_ = 0;
     size_t mainFileLines_ = 0;
     std::uintmax_t programBytes_ = 0;
-    std::string currentOutput_ = "Waiting for GCC...";
 };
 
 size_t countLines(const std::filesystem::path &file) {
@@ -2033,6 +2154,9 @@ void TurboIDEApp::compileCurrent(bool runAfterBuild, bool debugAfterBuild) {
     BuildRequest request;
     request.workingDirectory = source.parent_path();
     request.sources.push_back(source);
+    request.includeDirs = settings_.includeDirs;
+    request.libraryDirs = settings_.libraryDirs;
+    request.sourceDirs = settings_.sourceDirs;
     if (!saveBuildInputs(request))
         return;
     const auto runDirectory = standaloneRunDirectory_.empty()
@@ -2074,8 +2198,12 @@ void TurboIDEApp::buildProject(bool runAfterBuild, bool debugAfterBuild) {
         messageBox("Project has no compilable source files.", mfError | mfOKButton);
         return;
     }
-    request.includeDirs = project_.includeDirs;
+    request.includeDirs = settings_.includeDirs;
+    request.includeDirs.insert(request.includeDirs.end(), project_.includeDirs.begin(),
+                               project_.includeDirs.end());
     request.includeDirs.push_back(project_.file.parent_path());
+    request.libraryDirs = settings_.libraryDirs;
+    request.sourceDirs = settings_.sourceDirs;
     request.defines = project_.defines;
     request.libraries = project_.libraries;
     if (!saveBuildInputs(request))
@@ -2286,6 +2414,67 @@ void TurboIDEApp::editCompiler() {
     saveSettings(settings_);
 }
 
+void TurboIDEApp::editDirectories() {
+    char headers[directoryTextSize]{};
+    char libraries[directoryTextSize]{};
+    char sources[directoryTextSize]{};
+    std::snprintf(headers, sizeof(headers), "%s", directoryListText(settings_.includeDirs).c_str());
+    std::snprintf(libraries, sizeof(libraries), "%s", directoryListText(settings_.libraryDirs).c_str());
+    std::snprintf(sources, sizeof(sources), "%s", directoryListText(settings_.sourceDirs).c_str());
+
+    ushort result = cmCancel;
+    do {
+        TInputLine *headerInput = nullptr;
+        TInputLine *libraryInput = nullptr;
+        TInputLine *sourceInput = nullptr;
+        TDialog *dialog = createDirectoriesDialog(headerInput, libraryInput, sourceInput);
+        headerInput->setData(headers);
+        libraryInput->setData(libraries);
+        sourceInput->setData(sources);
+        TView *view = TProgram::application->validView(dialog);
+        if (!view)
+            return;
+        result = TProgram::deskTop->execView(view);
+        if (result != cmCancel) {
+            headerInput->getData(headers);
+            libraryInput->getData(libraries);
+            sourceInput->getData(sources);
+        }
+        TObject::destroy(view);
+        if (result >= cmDirectoriesBrowseHeaders && result <= cmDirectoriesBrowseSources) {
+            std::error_code error;
+            const auto originalDirectory = std::filesystem::current_path(error);
+            std::filesystem::path directory;
+            const char *instruction = result == cmDirectoriesBrowseHeaders
+                ? "Select an additional header directory."
+                : result == cmDirectoriesBrowseLibraries
+                    ? "Select an additional library directory."
+                    : "Select an additional source directory.";
+            const ushort pickerResult = execDialog(new DirectoryPickerDialog(directory, instruction));
+            if (!originalDirectory.empty())
+                std::filesystem::current_path(originalDirectory, error);
+            if (pickerResult == cmOK && !error) {
+                if (result == cmDirectoriesBrowseHeaders)
+                    appendDirectoryText(headers, sizeof(headers), directory);
+                else if (result == cmDirectoriesBrowseLibraries)
+                    appendDirectoryText(libraries, sizeof(libraries), directory);
+                else
+                    appendDirectoryText(sources, sizeof(sources), directory);
+            }
+        }
+    } while (result >= cmDirectoriesBrowseHeaders && result <= cmDirectoriesBrowseSources);
+    if (result == cmCancel)
+        return;
+
+    IDESettings updated = settings_;
+    if (!parseDirectoryList(headers, "header", updated.includeDirs) ||
+        !parseDirectoryList(libraries, "library", updated.libraryDirs) ||
+        !parseDirectoryList(sources, "source", updated.sourceDirs))
+        return;
+    settings_ = std::move(updated);
+    saveSettings(settings_);
+}
+
 void TurboIDEApp::editColors() {
     TColorGroup &groups =
         *new TColorGroup("Desktop") +
@@ -2369,7 +2558,7 @@ void TurboIDEApp::startBuild(BuildRequest request, bool runAfterBuild,
     messagesWindow_->show();
     const TRect extent = deskTop->getExtent();
     constexpr short popupWidth = 60;
-    constexpr short popupHeight = 14;
+    constexpr short popupHeight = 12;
     const short left = std::max<short>(0, (extent.b.x - popupWidth) / 2);
     const short top = std::max<short>(0, (extent.b.y - popupHeight) / 2);
     buildPopupSuccess_ = false;
@@ -2969,15 +3158,15 @@ void TurboIDEApp::idle() {
         }
     }
     if (!pendingMessages.empty()) {
-        messages_.insert(messages_.end(), std::make_move_iterator(pendingMessages.begin()),
-                         std::make_move_iterator(pendingMessages.end()));
-        messageIndex_ = messages_.size();
         for (const auto &message : pendingMessages) {
             buildWarnings_ += message.text.find("warning:") != std::string::npos;
             buildErrors_ += message.text.find("error:") != std::string::npos;
         }
+        messages_.insert(messages_.end(), std::make_move_iterator(pendingMessages.begin()),
+                         std::make_move_iterator(pendingMessages.end()));
+        messageIndex_ = messages_.size();
         if (buildPopup_)
-            buildPopup_->setProgress(pendingMessages.back().text, buildWarnings_, buildErrors_);
+            buildPopup_->setProgress(buildWarnings_, buildErrors_);
         if (messagesWindow_)
             messagesWindow_->updateMessages();
     }
@@ -3314,6 +3503,9 @@ void TurboIDEApp::handleEvent(TEvent &event) {
     case cmCompiler:
         editCompiler();
         break;
+    case cmDirectories:
+        editDirectories();
+        break;
     case cmColors:
         editColors();
         break;
@@ -3530,7 +3722,7 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
                     *new TMenuItem("~C~olors...", cmColors, TKey(kbNoKey), hcEnvironmentColors)),
                 hcEnvironmentMenu) +
             *new TMenuItem("~C~ompiler...", cmCompiler, TKey(kbNoKey)) +
-            *disabledMenuItem(new TMenuItem("~D~irectories...", cmNotReady, TKey(kbNoKey))) +
+            *new TMenuItem("~D~irectories...", cmDirectories, TKey(kbNoKey)) +
         *new TSubMenu("~W~indow", kbAltW, hcWindowMenu) +
             *new TMenuItem("~S~ize/move", cmResize, kbCtrlF5, hcNoContext, "Ctrl-F5") +
             *new TMenuItem("~Z~oom", cmZoom, kbF5, hcNoContext, "F5") +
