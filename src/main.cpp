@@ -3725,11 +3725,11 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
                           *new TMenuItem("Character right", cmCharRight, kbNoKey, hcNoContext, "Ctrl-D") +
                           *new TMenuItem("Line up", cmLineUp, kbNoKey, hcNoContext, "Ctrl-E") +
                           *new TMenuItem("Word right", cmWordRight, kbNoKey, hcNoContext, "Ctrl-F") +
+                          *new TMenuItem("Word left", cmWordLeft, kbNoKey, hcNoContext, "Ctrl-A") +
                           *new TMenuItem("Search again", cmSearchAgain, kbNoKey, hcNoContext, "Ctrl-L") +
                           *new TMenuItem("Page up", cmPageUp, kbNoKey, hcNoContext, "Ctrl-R") +
                           *new TMenuItem("Character left", cmCharLeft, kbNoKey, hcNoContext, "Ctrl-S") +
                           *new TMenuItem("Line down", cmLineDown, kbNoKey, hcNoContext, "Ctrl-X") + newLine() +
-                          *new TMenuItem("Word left", cmWordLeft, kbNoKey, hcNoContext, "Ctrl-Left") +
                           *new TMenuItem("Go to line...", cmGoToLine, kbNoKey, hcNoContext, "Ctrl-J") +
                           *new TMenuItem("Match bracket", cmMatchBracket, kbNoKey, hcNoContext,
                                          "Alt+[ / Alt+]"))) +
