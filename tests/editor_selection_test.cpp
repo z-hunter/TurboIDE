@@ -34,8 +34,28 @@ int main() {
     editor.setBufLen(sizeof(text) - 1);
     editor.setCurPtr(0, 0);
 
+    auto event = keyEvent('B', kbCtrlShift | kbShift);
+    editor.handleEvent(event);
+    event = keyEvent(kbRight);
+    editor.handleEvent(event);
+    event = keyEvent(kbRight);
+    editor.handleEvent(event);
+    event = keyEvent('K', kbCtrlShift | kbShift);
+    editor.handleEvent(event);
+    assert(editor.selStart == 0);
+    assert(editor.selEnd == 2);
+
+    editor.setCurPtr(3, 0);
+    event = keyEvent(kbCtrlA);
+    editor.handleEvent(event);
+    assert(editor.curPtr == 0);
+    event = keyEvent(kbCtrlA, kbCtrlShift | kbShift);
+    editor.handleEvent(event);
+    assert(editor.selStart == 0);
+    assert(editor.selEnd == editor.bufLen);
+
     assert(editor.runFeature(cmMenuBlockStart));
-    auto event = keyEvent(kbRight);
+    event = keyEvent(kbRight);
     editor.handleEvent(event);
     event = keyEvent(kbRight);
     editor.handleEvent(event);

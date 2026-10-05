@@ -211,6 +211,33 @@ public:
     }
 };
 
+class MiniBrowseButton final : public TButton {
+public:
+    MiniBrowseButton(const TRect &bounds, ushort command)
+        : TButton(bounds, "...", command, bfNormal) {}
+
+    void draw() override {
+        TDrawBuffer buffer;
+        const TAttrPair color = getColor((state & sfDisabled) ? 0x0404 : 0x0501);
+        buffer.moveChar(0, ' ', color, size.x);
+        buffer.moveCStr(0, "[...]", color, size.x);
+        writeLine(0, 0, size.x, 1, buffer);
+    }
+
+    void handleEvent(TEvent &event) override {
+        if (event.what == evMouseDown && (state & sfDisabled) == 0 &&
+            getExtent().contains(makeLocal(event.mouse.where))) {
+            press();
+            clearEvent(event);
+        } else if (event.what == evKeyDown && (state & sfDisabled) == 0 &&
+                   (state & sfFocused) != 0 &&
+                   (event.keyDown.keyCode == kbEnter || event.keyDown.charScan.charCode == ' ')) {
+            press();
+            clearEvent(event);
+        }
+    }
+};
+
 class DirectoriesDialog final : public ContextHelpDialog {
 public:
     DirectoriesDialog(const TRect &bounds)
@@ -756,22 +783,22 @@ TDialog *createDirectoriesDialog(TInputLine *&headers, TInputLine *&libraries,
     dialog->options |= ofCentered;
     dialog->insert(new TStaticText(TRect(3, 2, 74, 3),
         "Additional folders only; separate several folders with semicolons."));
-    headers = new TInputLine(TRect(3, 5, 61, 6), directoryTextSize - 1);
+    headers = new TInputLine(TRect(3, 5, 69, 6), directoryTextSize - 1);
     dialog->insert(headers);
     dialog->insert(new TLabel(TRect(3, 4, 30, 5), "~H~eader directories", headers));
-    dialog->insert(new TButton(TRect(63, 5, 74, 7), "~B~rowse", cmDirectoriesBrowseHeaders, bfNormal));
-    libraries = new TInputLine(TRect(3, 9, 61, 10), directoryTextSize - 1);
+    dialog->insert(new MiniBrowseButton(TRect(70, 5, 75, 6), cmDirectoriesBrowseHeaders));
+    libraries = new TInputLine(TRect(3, 9, 69, 10), directoryTextSize - 1);
     dialog->insert(libraries);
     dialog->insert(new TLabel(TRect(3, 8, 31, 9), "~L~ibrary directories", libraries));
-    dialog->insert(new TButton(TRect(63, 9, 74, 11), "Browse", cmDirectoriesBrowseLibraries, bfNormal));
-    sources = new TInputLine(TRect(3, 13, 61, 14), directoryTextSize - 1);
+    dialog->insert(new MiniBrowseButton(TRect(70, 9, 75, 10), cmDirectoriesBrowseLibraries));
+    sources = new TInputLine(TRect(3, 13, 69, 14), directoryTextSize - 1);
     dialog->insert(sources);
     dialog->insert(new TLabel(TRect(3, 12, 31, 13), "~S~ource directories", sources));
-    dialog->insert(new TButton(TRect(63, 13, 74, 15), "Browse", cmDirectoriesBrowseSources, bfNormal));
-    output = new TInputLine(TRect(3, 17, 61, 18), MAX_PATH - 1);
+    dialog->insert(new MiniBrowseButton(TRect(70, 13, 75, 14), cmDirectoriesBrowseSources));
+    output = new TInputLine(TRect(3, 17, 69, 18), MAX_PATH - 1);
     dialog->insert(output);
     dialog->insert(new TLabel(TRect(3, 16, 31, 17), "~O~utput directory (optional)", output));
-    dialog->insert(new TButton(TRect(63, 17, 74, 19), "Browse", cmDirectoriesBrowseOutput, bfNormal));
+    dialog->insert(new MiniBrowseButton(TRect(70, 17, 75, 18), cmDirectoriesBrowseOutput));
     dialog->insert(new TButton(TRect(44, 20, 54, 22), "O~K~", cmOK, bfDefault));
     dialog->insert(new TButton(TRect(58, 20, 69, 22), "Cancel", cmCancel, bfNormal));
     dialog->selectNext(False);
@@ -3723,10 +3750,9 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
                           *new TMenuItem("Expand snippet", cmExpandPmacro, kbNoKey, hcNoContext, "Ctrl-P") +
                           *new TMenuItem("Choose snippet...", cmChoosePmacro, TKey(kbNoKey)))) +
             *new TMenuItem("Se~l~ection", kbNoKey,
-                new TMenu(*new TMenuItem("Select all", cmSelectAll, kbNoKey, hcNoContext, "Ctrl-A") + newLine() +
+                new TMenu(*new TMenuItem("Select all", cmSelectAll, kbNoKey, hcNoContext, "Ctrl+Shift+A") + newLine() +
                           *new TMenuItem("Start block", cmMenuBlockStart, kbNoKey, hcNoContext, "Ctrl+Shift+B") +
                           *new TMenuItem("End block", cmMenuBlockEnd, kbNoKey, hcNoContext, "Ctrl+Shift+K") +
-                          *new TMenuItem("Copy block to clipboard", cmCopy, kbNoKey, hcNoContext, "Ctrl+Shift+C") +
                           *new TMenuItem("Hide/show block", cmMenuHideBlock, kbNoKey, hcNoContext, "Ctrl+Shift+H") +
                           *new TMenuItem("Cut block", cmCut, kbNoKey, hcNoContext, "Ctrl+Shift+X") +
                           *new TMenuItem("Duplicate block", cmMenuCopyBlock, kbNoKey, hcNoContext, "Ctrl-K, C") +

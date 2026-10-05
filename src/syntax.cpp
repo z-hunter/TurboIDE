@@ -471,6 +471,14 @@ private:
             return key == TKey(character, modifiers);
         };
 
+        if (matches('A', ctrlShift)) {
+            dispatchEditorCommand(cmSelectAll);
+            return true;
+        }
+        if (matches('A', kbCtrlShift)) {
+            dispatchEditorCommand(cmWordLeft);
+            return true;
+        }
         if (matches('[', kbAltShift) || matches(']', kbAltShift)) {
             runFeature(cmMatchBracket);
             return true;
