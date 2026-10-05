@@ -132,6 +132,8 @@ constexpr ushort cmDirectories = 180;
 constexpr ushort cmDirectoriesBrowseHeaders = 181;
 constexpr ushort cmDirectoriesBrowseLibraries = 182;
 constexpr ushort cmDirectoriesBrowseSources = 183;
+constexpr ushort cmDirectoriesBrowseOutput = 184;
+constexpr ushort cmRunConsoleInput = 185;
 
 // Borland TCHELP context IDs. Future TurboIDE documentation keeps these IDs.
 constexpr ushort hcEditWindow = 402;
@@ -159,6 +161,7 @@ constexpr ushort hcFindDialog = 562;
 constexpr ushort hcReplaceDialog = 566;
 constexpr ushort hcGoToLineDialog = 568;
 constexpr ushort hcRunParametersDialog = 572;
+constexpr ushort hcRunConsoleInputDialog = 573;
 constexpr ushort hcAddWatchDialog = 590;
 constexpr ushort hcEditorDialog = 899;
 constexpr ushort hcEditorTabSize = 899;
@@ -216,7 +219,7 @@ public:
     void handleEvent(TEvent &event) override {
         ContextHelpDialog::handleEvent(event);
         if (event.what == evCommand && event.message.command >= cmDirectoriesBrowseHeaders &&
-            event.message.command <= cmDirectoriesBrowseSources) {
+            event.message.command <= cmDirectoriesBrowseOutput) {
             endModal(event.message.command);
             clearEvent(event);
         }
@@ -668,6 +671,20 @@ TDialog *createEditorDialog(TInputLine *&tabs, TInputLine *&extension,
     return dialog;
 }
 
+TDialog *createRunConsoleInputDialog(TCheckBoxes *&options) {
+    auto *dialog = new ContextHelpDialog(TRect(0, 0, 68, 12), "Console Input", hcRunConsoleInputDialog);
+    dialog->options |= ofCentered;
+    dialog->insert(new TStaticText(TRect(3, 2, 65, 4),
+        "Normal input is compatible with getchar(), fgets(), and textbooks."));
+    options = new TCheckBoxes(TRect(3, 5, 65, 7),
+        new TSItem("Use ~d~irect Turbo Vision raw input", nullptr));
+    dialog->insert(options);
+    dialog->insert(new TButton(TRect(36, 9, 46, 11), "O~K~", cmOK, bfDefault));
+    dialog->insert(new TButton(TRect(50, 9, 61, 11), "Cancel", cmCancel, bfNormal));
+    dialog->selectNext(False);
+    return dialog;
+}
+
 TDialog *createCompilerDialog(TInputLine *&path) {
     auto *dialog = new CompilerDialog(TRect(0, 0, 68, 15));
     dialog->options |= ofCentered;
@@ -734,8 +751,8 @@ bool parseDirectoryList(const char *text, const char *kind,
 }
 
 TDialog *createDirectoriesDialog(TInputLine *&headers, TInputLine *&libraries,
-                                 TInputLine *&sources) {
-    auto *dialog = new DirectoriesDialog(TRect(0, 0, 78, 19));
+                                 TInputLine *&sources, TInputLine *&output) {
+    auto *dialog = new DirectoriesDialog(TRect(0, 0, 78, 23));
     dialog->options |= ofCentered;
     dialog->insert(new TStaticText(TRect(3, 2, 74, 3),
         "Additional folders only; separate several folders with semicolons."));
@@ -751,8 +768,12 @@ TDialog *createDirectoriesDialog(TInputLine *&headers, TInputLine *&libraries,
     dialog->insert(sources);
     dialog->insert(new TLabel(TRect(3, 12, 31, 13), "~S~ource directories", sources));
     dialog->insert(new TButton(TRect(63, 13, 74, 15), "Browse", cmDirectoriesBrowseSources, bfNormal));
-    dialog->insert(new TButton(TRect(44, 16, 54, 18), "O~K~", cmOK, bfDefault));
-    dialog->insert(new TButton(TRect(58, 16, 69, 18), "Cancel", cmCancel, bfNormal));
+    output = new TInputLine(TRect(3, 17, 61, 18), MAX_PATH - 1);
+    dialog->insert(output);
+    dialog->insert(new TLabel(TRect(3, 16, 31, 17), "~O~utput directory (optional)", output));
+    dialog->insert(new TButton(TRect(63, 17, 74, 19), "Browse", cmDirectoriesBrowseOutput, bfNormal));
+    dialog->insert(new TButton(TRect(44, 20, 54, 22), "O~K~", cmOK, bfDefault));
+    dialog->insert(new TButton(TRect(58, 20, 69, 22), "Cancel", cmCancel, bfNormal));
     dialog->selectNext(False);
     return dialog;
 }
@@ -909,7 +930,7 @@ ushort editDialog(int dialog, ...) {
 
 class TurboIDEApp : public TApplication {
 public:
-    TurboIDEApp();
+    explicit TurboIDEApp(ConsoleInputMode startupInputMode);
     ~TurboIDEApp() override;
     void handleEvent(TEvent &event) override;
     void idle() override;
@@ -976,6 +997,7 @@ private:
     void navigateMessage(bool forward);
     void editRunParameters();
     void editRunDirectory();
+    void editRunConsoleInput();
     void changeDirectory();
     void editEnvironment();
     void editCompiler();
@@ -1016,6 +1038,7 @@ private:
     HANDLE consoleInput_ = INVALID_HANDLE_VALUE;
     bool ownsConsoleInput_ = false;
     HANDLE userScreenBuffer_ = INVALID_HANDLE_VALUE;
+    ConsoleInputMode startupInputMode_;
     bool runAfterBuild_ = false;
     bool debugAfterBuild_ = false;
     std::unique_ptr<GdbSession> debugger_;
@@ -1543,10 +1566,10 @@ private:
     DebugWatchList *list_;
 };
 
-TurboIDEApp::TurboIDEApp()
+TurboIDEApp::TurboIDEApp(ConsoleInputMode startupInputMode)
     : TProgInit(&TurboIDEApp::initStatusLine,
                 &TurboIDEApp::initMenuBar,
-                &TurboIDEApp::initDeskTop) {
+                &TurboIDEApp::initDeskTop), startupInputMode_(startupInputMode) {
     disableCommand(cmNotReady);
     contextHelpHandler = [this](ushort context) { showHelpContext(context); };
     TEditor::editorDialog = editDialog;
@@ -2277,6 +2300,24 @@ void TurboIDEApp::editRunDirectory() {
     }
 }
 
+void TurboIDEApp::editRunConsoleInput() {
+    TCheckBoxes *options = nullptr;
+    TDialog *dialog = createRunConsoleInputDialog(options);
+    ushort value = settings_.directConsoleInput ? 1 : 0;
+    options->setData(&value);
+    TView *view = TProgram::application->validView(dialog);
+    if (!view)
+        return;
+    const ushort result = TProgram::deskTop->execView(view);
+    if (result != cmCancel)
+        options->getData(&value);
+    TObject::destroy(view);
+    if (result == cmCancel)
+        return;
+    settings_.directConsoleInput = (value & 1) != 0;
+    saveSettings(settings_);
+}
+
 void TurboIDEApp::changeDirectory() {
     if (hasProject_ && !saveDesktopSession())
         messageBox("Could not save the project desktop file.", mfError | mfOKButton);
@@ -2418,19 +2459,23 @@ void TurboIDEApp::editDirectories() {
     char headers[directoryTextSize]{};
     char libraries[directoryTextSize]{};
     char sources[directoryTextSize]{};
+    char output[MAX_PATH]{};
     std::snprintf(headers, sizeof(headers), "%s", directoryListText(settings_.includeDirs).c_str());
     std::snprintf(libraries, sizeof(libraries), "%s", directoryListText(settings_.libraryDirs).c_str());
     std::snprintf(sources, sizeof(sources), "%s", directoryListText(settings_.sourceDirs).c_str());
+    std::snprintf(output, sizeof(output), "%s", settings_.outputDirectory.u8string().c_str());
 
     ushort result = cmCancel;
     do {
         TInputLine *headerInput = nullptr;
         TInputLine *libraryInput = nullptr;
         TInputLine *sourceInput = nullptr;
-        TDialog *dialog = createDirectoriesDialog(headerInput, libraryInput, sourceInput);
+        TInputLine *outputInput = nullptr;
+        TDialog *dialog = createDirectoriesDialog(headerInput, libraryInput, sourceInput, outputInput);
         headerInput->setData(headers);
         libraryInput->setData(libraries);
         sourceInput->setData(sources);
+        outputInput->setData(output);
         TView *view = TProgram::application->validView(dialog);
         if (!view)
             return;
@@ -2439,9 +2484,10 @@ void TurboIDEApp::editDirectories() {
             headerInput->getData(headers);
             libraryInput->getData(libraries);
             sourceInput->getData(sources);
+            outputInput->getData(output);
         }
         TObject::destroy(view);
-        if (result >= cmDirectoriesBrowseHeaders && result <= cmDirectoriesBrowseSources) {
+        if (result >= cmDirectoriesBrowseHeaders && result <= cmDirectoriesBrowseOutput) {
             std::error_code error;
             const auto originalDirectory = std::filesystem::current_path(error);
             std::filesystem::path directory;
@@ -2449,7 +2495,8 @@ void TurboIDEApp::editDirectories() {
                 ? "Select an additional header directory."
                 : result == cmDirectoriesBrowseLibraries
                     ? "Select an additional library directory."
-                    : "Select an additional source directory.";
+                    : result == cmDirectoriesBrowseSources ? "Select an additional source directory."
+                    : "Select the folder where compiled program.exe files are written.";
             const ushort pickerResult = execDialog(new DirectoryPickerDialog(directory, instruction));
             if (!originalDirectory.empty())
                 std::filesystem::current_path(originalDirectory, error);
@@ -2458,11 +2505,13 @@ void TurboIDEApp::editDirectories() {
                     appendDirectoryText(headers, sizeof(headers), directory);
                 else if (result == cmDirectoriesBrowseLibraries)
                     appendDirectoryText(libraries, sizeof(libraries), directory);
-                else
+                else if (result == cmDirectoriesBrowseSources)
                     appendDirectoryText(sources, sizeof(sources), directory);
+                else
+                    std::snprintf(output, sizeof(output), "%s", directory.u8string().c_str());
             }
         }
-    } while (result >= cmDirectoriesBrowseHeaders && result <= cmDirectoriesBrowseSources);
+    } while (result >= cmDirectoriesBrowseHeaders && result <= cmDirectoriesBrowseOutput);
     if (result == cmCancel)
         return;
 
@@ -2471,6 +2520,16 @@ void TurboIDEApp::editDirectories() {
         !parseDirectoryList(libraries, "library", updated.libraryDirs) ||
         !parseDirectoryList(sources, "source", updated.sourceDirs))
         return;
+    if (output[0]) {
+        std::error_code error;
+        updated.outputDirectory = std::filesystem::absolute(std::filesystem::u8path(output), error).lexically_normal();
+        if (error || !std::filesystem::is_directory(updated.outputDirectory, error)) {
+            messageBox("Select an existing output directory, or leave the path empty.",
+                       mfError | mfOKButton);
+            return;
+        }
+    } else
+        updated.outputDirectory.clear();
     settings_ = std::move(updated);
     saveSettings(settings_);
 }
@@ -2527,6 +2586,7 @@ void TurboIDEApp::startBuild(BuildRequest request, bool runAfterBuild,
     if (buildThread_.joinable())
         buildThread_.join();
     request.compilerPath = settings_.compilerPath;
+    request.outputDirectory = settings_.outputDirectory;
     buildRunning_ = true;
     buildReturnView_ = deskTop->current;
     buildCancelRequested.store(false);
@@ -2691,8 +2751,10 @@ void TurboIDEApp::showBuildResult(BuildResult result) {
 void TurboIDEApp::runBuiltProgram(const std::filesystem::path &executable) {
     if (userScreenBuffer_ == INVALID_HANDLE_VALUE)
         userScreenBuffer_ = createUserScreenBuffer(ideScreenBuffer_);
+    ConsoleInputMode inputMode = startupInputMode_;
+    inputMode.direct = settings_.directConsoleInput;
     RunResult result = runProgram({executable, runWorkingDirectory_, runArguments_},
-                                 userScreenBuffer_, ideScreenBuffer_, consoleInput_);
+                                 userScreenBuffer_, ideScreenBuffer_, consoleInput_, inputMode);
     if (!result.error.empty())
         messages_.push_back({result.error, {}, 0, 0, false});
     else if (result.started)
@@ -2862,8 +2924,10 @@ void TurboIDEApp::startDebuggee(const std::filesystem::path &executable) {
     std::string error;
     const auto gdbPath = settings_.compilerPath.empty() ? std::filesystem::path{} :
                          settings_.compilerPath.parent_path() / L"gdb.exe";
+    ConsoleInputMode inputMode = startupInputMode_;
+    inputMode.direct = settings_.directConsoleInput;
     if (!session->start(executable, runWorkingDirectory_, gdbPath, runArguments_, allBreakpoints(),
-                        userScreenBuffer_, consoleInput_, firstStop, error)) {
+                        userScreenBuffer_, consoleInput_, inputMode, firstStop, error)) {
         SetConsoleActiveScreenBuffer(ideScreenBuffer_);
         session.reset();
         messages_.push_back({error, {}, 0, 0, false});
@@ -3093,8 +3157,10 @@ void TurboIDEApp::showLastUserScreen() {
         }
     }
     std::string error;
+    ConsoleInputMode inputMode = startupInputMode_;
+    inputMode.direct = settings_.directConsoleInput;
     if (!showUserScreen(userScreenBuffer_, ideScreenBuffer_, consoleInput_, !debugger_,
-                        runWorkingDirectory_, error))
+                        runWorkingDirectory_, inputMode, error))
         messageBox("Cannot display or restore the user screen.", mfError | mfOKButton);
     if (!error.empty())
         messageBox(error.c_str(), mfError | mfOKButton);
@@ -3109,8 +3175,10 @@ void TurboIDEApp::showCommandPrompt() {
     if (userScreenBuffer_ == INVALID_HANDLE_VALUE)
         userScreenBuffer_ = createUserScreenBuffer(ideScreenBuffer_);
     std::string error;
+    ConsoleInputMode inputMode = startupInputMode_;
+    inputMode.direct = settings_.directConsoleInput;
     if (!runCommandPrompt(userScreenBuffer_, ideScreenBuffer_, consoleInput_,
-                          runWorkingDirectory_, error))
+                          runWorkingDirectory_, inputMode, error))
         messageBox(error.empty() ? "Cannot start the command prompt." : error.c_str(),
                    mfError | mfOKButton);
 }
@@ -3494,6 +3562,9 @@ void TurboIDEApp::handleEvent(TEvent &event) {
     case cmRunDirectory:
         editRunDirectory();
         break;
+    case cmRunConsoleInput:
+        editRunConsoleInput();
+        break;
     case cmChangeDirectory:
         changeDirectory();
         break;
@@ -3680,6 +3751,7 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
             *new TMenuItem("Command prompt...", cmCommandPrompt, TKey(kbNoKey)) +
             *new TMenuItem("Run ~d~irectory...", cmRunDirectory, TKey(kbNoKey)) +
             *new TMenuItem("~P~arameters...", cmRunParameters, TKey(kbNoKey)) +
+            *new TMenuItem("Console ~i~nput...", cmRunConsoleInput, TKey(kbNoKey)) +
         *new TSubMenu("~C~ompile", kbAltC, hcCompileMenu) +
             *new TMenuItem("~C~ompile", cmCompile, kbAltF9, hcNoContext, "Alt-F9") +
             *new TMenuItem("~M~ake", cmBuild, kbF9, hcNoContext, "F9") +
@@ -3775,7 +3847,10 @@ void advanceEditorPrefixHintPage(TFileEditor *editor) {
 }
 
 int main() {
-    TurboIDEApp app;
+    ConsoleInputMode startupInputMode;
+    startupInputMode.hasStartupMode = GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE),
+                                                     &startupInputMode.startupMode) != FALSE;
+    TurboIDEApp app(startupInputMode);
     app.run();
     return 0;
 }

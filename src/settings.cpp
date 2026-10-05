@@ -48,6 +48,10 @@ void loadSettings(IDESettings &settings) {
                 settings.compilerType = "gcc";
         } else if (line.rfind("compiler_path=", 0) == 0) {
             settings.compilerPath = std::filesystem::u8path(line.substr(14));
+        } else if (line.rfind("output_directory=", 0) == 0) {
+            settings.outputDirectory = std::filesystem::u8path(line.substr(17));
+        } else if (line.rfind("direct_console_input=", 0) == 0) {
+            settings.directConsoleInput = line.substr(21) == "1";
         } else if (line.rfind("include_dir=", 0) == 0) {
             settings.includeDirs.push_back(std::filesystem::u8path(line.substr(12)));
         } else if (line.rfind("library_dir=", 0) == 0) {
@@ -76,6 +80,9 @@ void saveSettings(const IDESettings &settings) {
     output << "compiler_type=gcc\n";
     if (!settings.compilerPath.empty())
         output << "compiler_path=" << toUtf8(settings.compilerPath) << "\n";
+    if (!settings.outputDirectory.empty())
+        output << "output_directory=" << toUtf8(settings.outputDirectory) << "\n";
+    output << "direct_console_input=" << (settings.directConsoleInput ? 1 : 0) << "\n";
     for (const auto &directory : settings.includeDirs)
         output << "include_dir=" << toUtf8(directory) << "\n";
     for (const auto &directory : settings.libraryDirs)

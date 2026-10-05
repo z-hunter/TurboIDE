@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "run.h"
+
 struct DebugBreakpoint {
     std::filesystem::path file;
     int line = 0;
@@ -41,6 +43,7 @@ public:
                const std::vector<std::wstring> &arguments,
                const std::vector<DebugBreakpoint> &breakpoints,
                HANDLE userScreen, HANDLE consoleInput,
+               const ConsoleInputMode &inputMode,
                DebugStop &firstStop, std::string &error);
     bool resume(DebugStop &stop, std::string &error);
     bool stepInto(DebugStop &stop, std::string &error);
@@ -73,6 +76,7 @@ private:
     HANDLE processJob_ = INVALID_HANDLE_VALUE;
     HANDLE userScreen_ = INVALID_HANDLE_VALUE;
     HANDLE consoleInput_ = INVALID_HANDLE_VALUE;
+    ConsoleInputMode inputMode_;
     std::filesystem::path gdbPath_;
     std::string inputBuffer_;
     std::vector<std::string> pendingLines_;

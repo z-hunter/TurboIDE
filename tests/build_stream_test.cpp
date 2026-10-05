@@ -23,6 +23,7 @@ int main() {
     BuildRequest request;
     request.compilerPath = compiler;
     request.workingDirectory = directory;
+    request.outputDirectory = directory / L"output";
     request.sources.push_back(directory / L"fake.c");
     request.includeDirs.push_back(directory / L"headers");
     request.libraryDirs.push_back(directory / L"libraries");
@@ -35,7 +36,7 @@ int main() {
         messages.push_back(std::move(message.text));
     });
     std::filesystem::remove_all(directory);
-    return result.succeeded && received.size() == 3 &&
+    return result.succeeded && result.executable.parent_path() == request.outputDirectory && received.size() == 3 &&
                    received[2] - received[1] >= std::chrono::milliseconds(100) &&
                    messages[0].find("-I") != std::string::npos &&
                    messages[0].find("-L") != std::string::npos &&

@@ -10,6 +10,20 @@ FetchContent_Declare(tvision
 )
 FetchContent_MakeAvailable(tvision)
 
+option(TURBOIDE_BUNDLE_MINGW_RUNTIME "Copy MinGW runtime DLLs beside built executables" ON)
+if(MINGW AND TURBOIDE_BUNDLE_MINGW_RUNTIME)
+    get_filename_component(_mingw_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    file(GLOB _mingw_runtime_dlls "${_mingw_bin}/libgcc_s_*-1.dll"
+         "${_mingw_bin}/libstdc++-6.dll" "${_mingw_bin}/libwinpthread-1.dll")
+    function(copy_mingw_runtime target)
+        foreach(_dll IN LISTS _mingw_runtime_dlls)
+            add_custom_command(TARGET ${target} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_dll}" "$<TARGET_FILE_DIR:${target}>"
+                VERBATIM)
+        endforeach()
+    endfunction()
+endif()
+
 # Turbo Vision's private active buffer must permit CONOUT$ to reopen it so Run
 # can restore the IDE after switching to the user's screen buffer.
 set(_tv_console_source "${tvision_SOURCE_DIR}/source/platform/conctl.cpp")
@@ -161,6 +175,9 @@ file(WRITE "${_tv_editor_source}" "${_tv_undo_editor_text}")
 add_executable(turboide src/main.cpp src/build.cpp src/project.cpp src/run.cpp src/debugger.cpp src/syntax.cpp src/editor_features.cpp src/settings.cpp src/desktop_session.cpp src/legacy_help.cpp)
 target_compile_features(turboide PRIVATE cxx_std_17)
 target_link_libraries(turboide PRIVATE tvision)
+if(MINGW AND TURBOIDE_BUNDLE_MINGW_RUNTIME)
+    copy_mingw_runtime(turboide)
+endif()
 add_custom_command(TARGET turboide POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:turboide>/conio"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -181,6 +198,9 @@ add_custom_command(TARGET turboide POST_BUILD
 )
 if(MSVC)
     target_compile_options(turboide PRIVATE /utf-8)
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # GCC 16 enables char8_t as an extension in C++17 mode; TurboIDE stores UTF-8 as char strings.
+    target_compile_options(turboide PRIVATE -fno-char8_t)
 endif()
 
 option(TURBOIDE_BUILD_HELP_TOOLS "Build optional legacy help conversion tools" OFF)
@@ -208,8 +228,18 @@ if(TURBOIDE_BUILD_TESTS)
     target_compile_features(toolchain_environment_test PRIVATE cxx_std_17)
     add_executable(fake_build_compiler tests/fake_build_compiler.cpp)
     target_compile_features(fake_build_compiler PRIVATE cxx_std_17)
+    if(MINGW)
+        target_link_options(fake_build_compiler PRIVATE -municode)
+    endif()
     add_executable(build_stream_test tests/build_stream_test.cpp src/build.cpp)
     target_compile_features(build_stream_test PRIVATE cxx_std_17)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(build_stream_test PRIVATE -fno-char8_t)
+    endif()
+    if(MINGW AND TURBOIDE_BUNDLE_MINGW_RUNTIME)
+        copy_mingw_runtime(fake_build_compiler)
+        copy_mingw_runtime(build_stream_test)
+    endif()
     add_dependencies(build_stream_test fake_build_compiler)
     add_executable(editor_selection_test tests/editor_selection_test.cpp)
     target_compile_features(editor_selection_test PRIVATE cxx_std_17)

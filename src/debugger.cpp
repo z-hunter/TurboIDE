@@ -328,11 +328,13 @@ bool GdbSession::start(const std::filesystem::path &executable,
                        const std::vector<std::wstring> &arguments,
                        const std::vector<DebugBreakpoint> &breakpoints,
                        HANDLE userScreen, HANDLE consoleInput,
+                       const ConsoleInputMode &inputMode,
                        DebugStop &firstStop, std::string &error) {
     stop(error);
     error.clear();
     userScreen_ = userScreen;
     consoleInput_ = consoleInput;
+    inputMode_ = inputMode;
     gdbPath_ = gdbPath;
     supportsMayCallFunctions_ = false;
     mayCallFunctionsEnabled_ = true;
@@ -347,6 +349,12 @@ bool GdbSession::start(const std::filesystem::path &executable,
         return false;
     }
 
+    ChildConsoleInputMode childMode(consoleInput_, inputMode_);
+    if (!childMode.activate()) {
+        error = "Cannot configure console input for the debuggee.";
+        closeHandles();
+        return false;
+    }
     HANDLE childInput = inheritableDuplicate(consoleInput);
     HANDLE childOutput = inheritableDuplicate(userScreen);
     if (!usable(childInput) || !usable(childOutput)) {
@@ -474,7 +482,9 @@ bool GdbSession::start(const std::filesystem::path &executable,
         stop(error);
         return false;
     }
-    return waitForStop(firstStop, error);
+    const bool stopped = waitForStop(firstStop, error);
+    childMode.restore();
+    return stopped;
 }
 
 bool GdbSession::setBreakpoints(const std::vector<DebugBreakpoint> &breakpoints,
@@ -499,6 +509,11 @@ bool GdbSession::setBreakpoints(const std::vector<DebugBreakpoint> &breakpoints,
 }
 
 bool GdbSession::executeAndWait(const char *command, DebugStop &stop, std::string &error) {
+    ChildConsoleInputMode childMode(consoleInput_, inputMode_);
+    if (!childMode.activate()) {
+        error = "Cannot configure console input for the debuggee.";
+        return false;
+    }
     std::string reply;
     if (!sendCommand(command, reply, error)) return false;
     running_ = true;

@@ -207,15 +207,12 @@ BuildResult runBuild(const BuildRequest &request, const std::atomic_bool &cancel
         return result;
     }
 
-    const auto outputDirectory = request.workingDirectory / L".turboide-build";
-    if (!CreateDirectoryW(outputDirectory.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) {
-        result.error = "Cannot create .turboide-build directory.";
-        return result;
-    }
-    const DWORD directoryAttributes = GetFileAttributesW(outputDirectory.c_str());
-    if (directoryAttributes == INVALID_FILE_ATTRIBUTES ||
-        (directoryAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
-        result.error = ".turboide-build exists but is not a directory.";
+    const auto outputDirectory = request.outputDirectory.empty()
+        ? request.workingDirectory / L".turboide-build" : request.outputDirectory;
+    std::error_code outputError;
+    std::filesystem::create_directories(outputDirectory, outputError);
+    if (outputError || !std::filesystem::is_directory(outputDirectory, outputError)) {
+        result.error = "Cannot create output directory.";
         return result;
     }
     result.executable = outputDirectory / L"program.exe";
@@ -266,7 +263,7 @@ BuildResult runBuild(const BuildRequest &request, const std::atomic_bool &cancel
     for (const auto &library : request.libraries)
         addArg(command, library.compare(0, 2, L"-l") == 0 ? library : L"-l" + library);
     addArg(command, L"-o");
-    addArg(command, L".turboide-build\\program.exe");
+    addArg(command, result.executable.wstring());
     BuildMessage commandMessage{"$ " + toUtf8(command)};
     result.messages.push_back(commandMessage);
     if (onOutput)

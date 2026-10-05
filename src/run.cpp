@@ -75,6 +75,28 @@ BOOL WINAPI handleParentControlEvent(DWORD event) {
 }
 }
 
+ChildConsoleInputMode::ChildConsoleInputMode(HANDLE consoleInput, const ConsoleInputMode &mode)
+    : consoleInput_(consoleInput), mode_(mode) {}
+
+ChildConsoleInputMode::~ChildConsoleInputMode() {
+    restore();
+}
+
+bool ChildConsoleInputMode::activate() {
+    if (!GetConsoleMode(consoleInput_, &ideMode_))
+        return false;
+    restoreNeeded_ = true;
+    return mode_.direct || !mode_.hasStartupMode || ideMode_ == mode_.startupMode ||
+        SetConsoleMode(consoleInput_, mode_.startupMode) != FALSE;
+}
+
+void ChildConsoleInputMode::restore() {
+    if (restoreNeeded_) {
+        SetConsoleMode(consoleInput_, ideMode_);
+        restoreNeeded_ = false;
+    }
+}
+
 HANDLE createUserScreenBuffer(HANDLE ideScreenBuffer) {
     if (!usable(ideScreenBuffer))
         return INVALID_HANDLE_VALUE;
@@ -107,7 +129,13 @@ HANDLE createUserScreenBuffer(HANDLE ideScreenBuffer) {
 
 namespace {
 bool runShell(HANDLE screen, HANDLE consoleInput,
-              const std::filesystem::path &workingDirectory, std::string &error) {
+              const std::filesystem::path &workingDirectory,
+              const ConsoleInputMode &inputMode, std::string &error) {
+    ChildConsoleInputMode childMode(consoleInput, inputMode);
+    if (!childMode.activate()) {
+        error = "Cannot configure console input for cmd.exe.";
+        return false;
+    }
     HANDLE childInput = duplicateInheritable(consoleInput);
     HANDLE childOutput = duplicateInheritable(screen);
     if (!usable(childInput) || !usable(childOutput)) {
@@ -151,7 +179,7 @@ bool runShell(HANDLE screen, HANDLE consoleInput,
 }
 
 RunResult runProgram(const RunRequest &request, HANDLE screen, HANDLE ideScreenBuffer,
-                     HANDLE consoleInput) {
+                     HANDLE consoleInput, const ConsoleInputMode &inputMode) {
     RunResult result;
     if (!usable(screen)) {
         result.error = "The user screen buffer is unavailable.";
@@ -166,8 +194,11 @@ RunResult runProgram(const RunRequest &request, HANDLE screen, HANDLE ideScreenB
         return result;
     }
 
-    DWORD inputMode = 0;
-    const bool restoreInputMode = GetConsoleMode(consoleInput, &inputMode) != FALSE;
+    ChildConsoleInputMode childMode(consoleInput, inputMode);
+    if (!childMode.activate()) {
+        result.error = "Cannot configure console input for the program.";
+        return result;
+    }
 
     HANDLE childInput = duplicateInheritable(consoleInput);
     HANDLE childOutput = duplicateInheritable(screen);
@@ -226,8 +257,7 @@ RunResult runProgram(const RunRequest &request, HANDLE screen, HANDLE ideScreenB
     }
     GetExitCodeProcess(process.hProcess, &result.exitCode);
     SetConsoleCtrlHandler(handleParentControlEvent, FALSE);
-    if (restoreInputMode)
-        SetConsoleMode(consoleInput, inputMode);
+    childMode.restore();
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
 
@@ -241,7 +271,7 @@ RunResult runProgram(const RunRequest &request, HANDLE screen, HANDLE ideScreenB
 
 bool showUserScreen(HANDLE screenBuffer, HANDLE ideScreenBuffer, HANDLE consoleInput,
                     bool allowShell, const std::filesystem::path &workingDirectory,
-                    std::string &error) {
+                    const ConsoleInputMode &inputMode, std::string &error) {
     if (!usable(screenBuffer) || !SetConsoleActiveScreenBuffer(screenBuffer))
         return false;
 
@@ -306,7 +336,7 @@ bool showUserScreen(HANDLE screenBuffer, HANDLE ideScreenBuffer, HANDLE consoleI
             break;
         if (allowShell && key.wVirtualKeyCode == VK_RETURN) {
             restoreHint();
-            if (!runShell(screenBuffer, consoleInput, workingDirectory, error)) {
+            if (!runShell(screenBuffer, consoleInput, workingDirectory, inputMode, error)) {
                 ok = false;
                 break;
             }
@@ -318,10 +348,11 @@ bool showUserScreen(HANDLE screenBuffer, HANDLE ideScreenBuffer, HANDLE consoleI
 }
 
 bool runCommandPrompt(HANDLE screenBuffer, HANDLE ideScreenBuffer, HANDLE consoleInput,
-                     const std::filesystem::path &workingDirectory, std::string &error) {
+                     const std::filesystem::path &workingDirectory,
+                     const ConsoleInputMode &inputMode, std::string &error) {
     if (!usable(screenBuffer) || !SetConsoleActiveScreenBuffer(screenBuffer))
         return false;
-    const bool ok = runShell(screenBuffer, consoleInput, workingDirectory, error);
+    const bool ok = runShell(screenBuffer, consoleInput, workingDirectory, inputMode, error);
     const bool restored = SetConsoleActiveScreenBuffer(ideScreenBuffer) != FALSE;
     return ok && restored;
 }

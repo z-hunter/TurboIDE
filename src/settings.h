@@ -11,6 +11,8 @@ struct IDESettings {
     std::string defaultExtension = ".c";
     std::string compilerType = "gcc";
     std::filesystem::path compilerPath;
+    std::filesystem::path outputDirectory;
+    bool directConsoleInput = false;
     std::vector<std::filesystem::path> includeDirs;
     std::vector<std::filesystem::path> libraryDirs;
     std::vector<std::filesystem::path> sourceDirs;
