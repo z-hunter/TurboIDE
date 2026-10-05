@@ -3755,7 +3755,6 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
                           *new TMenuItem("End block", cmMenuBlockEnd, kbNoKey, hcNoContext, "Ctrl+Shift+K") +
                           *new TMenuItem("Hide/show block", cmMenuHideBlock, kbNoKey, hcNoContext, "Ctrl+Shift+H") +
                           *new TMenuItem("Cut block", cmCut, kbNoKey, hcNoContext, "Ctrl+Shift+X") +
-                          *new TMenuItem("Duplicate block", cmMenuCopyBlock, kbNoKey, hcNoContext, "Ctrl-K, C") +
                           *new TMenuItem("Select line", cmMenuSelectLine, kbNoKey, hcNoContext, "Ctrl+Shift+L") +
                           *new TMenuItem("Select word", cmMenuSelectWord, kbNoKey, hcNoContext, "Ctrl+Shift+T") + newLine() +
                           *new TMenuItem("Indent block", cmMenuIndentBlock, kbNoKey, hcNoContext, "Ctrl+Shift+I") +

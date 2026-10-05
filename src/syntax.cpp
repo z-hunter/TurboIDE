@@ -209,6 +209,11 @@ public:
                 updateMatchingBracket();
                 return;
             }
+            if (const ushort command = blockShortcutCommand(event)) {
+                runFeature(command);
+                clearEvent(event);
+                return;
+            }
             if (event.keyDown.keyCode == kbCtrlQ || event.keyDown.keyCode == kbCtrlK) {
                 prefixMode_ = event.keyDown.keyCode == kbCtrlQ ? 1 : 2;
                 setEditorPrefixHint(this, prefixMode_);
@@ -452,6 +457,16 @@ private:
         return static_cast<char>(std::toupper(static_cast<unsigned char>(key & 0xFF)));
     }
 
+    static ushort blockShortcutCommand(const TEvent &event) {
+        if (event.what != evKeyDown || !(event.keyDown.controlKeyState & kbShift))
+            return 0;
+        if (event.keyDown.keyCode == kbCtrlB)
+            return cmMenuBlockStart;
+        if (event.keyDown.keyCode == kbCtrlK)
+            return cmMenuBlockEnd;
+        return 0;
+    }
+
     void dispatchEditorCommand(ushort command) {
         const uint oldCursor = curPtr;
         TEvent commandEvent{};
@@ -464,6 +479,10 @@ private:
 
     bool handleDirectShortcut(const TEvent &event) {
         if (event.what != evKeyDown) return false;
+        if (const ushort command = blockShortcutCommand(event)) {
+            runFeature(command);
+            return true;
+        }
         const TKey key(event.keyDown);
         constexpr ushort ctrlShift = kbCtrlShift | kbShift;
         constexpr ushort ctrlAlt = kbCtrlShift | kbAltShift;
@@ -506,8 +525,6 @@ private:
         ushort command = 0;
         if (matches('Y', ctrlShift)) command = cmDelEnd;
         else if (matches(kbBack, ctrlShift)) command = cmDelStart;
-        else if (matches('B', ctrlShift)) command = cmMenuBlockStart;
-        else if (matches('K', ctrlShift)) command = cmMenuBlockEnd;
         else if (matches('C', ctrlShift)) command = cmCopy;
         else if (matches('H', ctrlShift)) command = cmMenuHideBlock;
         else if (matches('X', ctrlShift)) command = cmCut;
@@ -642,6 +659,7 @@ private:
     }
 
     void beginBlock() {
+        clearRectangleSelection();
         blockStart_ = curPtr;
         blockSelecting_ = true;
         blockHidden_ = false;
@@ -658,6 +676,7 @@ private:
     }
 
     void selectLine() {
+        clearRectangleSelection();
         cancelPendingBlockSelection();
         const uint start = lineStart(curPtr);
         setSelect(start, lineEnd(curPtr), Boolean(curPtr == start));
@@ -665,6 +684,7 @@ private:
     }
 
     void selectWord() {
+        clearRectangleSelection();
         cancelPendingBlockSelection();
         uint start = curPtr;
         uint end = curPtr;
@@ -910,10 +930,6 @@ private:
         return event.keyDown.keyCode == kbBack || event.keyDown.keyCode == kbDel;
     }
 
-    bool isShiftSelection(const TEvent &event) const {
-        return event.what == evKeyDown && (event.keyDown.controlKeyState & kbShift);
-    }
-
     bool isShiftNavigation(const TEvent &event) const {
         if (event.what != evKeyDown)
             return false;
@@ -925,6 +941,8 @@ private:
         case kbHome: case kbEnd: case kbPgUp: case kbPgDn:
         case kbCtrlLeft: case kbCtrlRight: case kbCtrlHome: case kbCtrlEnd:
         case kbCtrlPgUp: case kbCtrlPgDn:
+        case kbCtrlS: case kbCtrlD: case kbCtrlE: case kbCtrlX:
+        case kbCtrlC: case kbCtrlR: case kbCtrlF:
             return true;
         default:
             return false;
@@ -936,15 +954,25 @@ private:
     }
 
     void discardSelectionAnchor() {
-        blockHidden_ = false;
-        cancelPendingBlockSelection();
-        selecting = False;
-        setSelect(curPtr, curPtr, False);
+        clearRectangleSelection();
+        discardLinearSelection();
     }
 
     void cancelPendingBlockSelection() {
         blockStart_ = curPtr;
         blockSelecting_ = false;
+    }
+
+    void clearRectangleSelection() {
+        rectangleValid_ = false;
+        rectangleHidden_ = false;
+    }
+
+    void discardLinearSelection() {
+        blockHidden_ = false;
+        cancelPendingBlockSelection();
+        selecting = False;
+        setSelect(curPtr, curPtr, False);
     }
 
     void handleBaseEvent(TEvent &event) {
@@ -963,10 +991,13 @@ private:
             return;
         }
         if (startsMouseSelection(event) || !persistentBlocks_ || !hasSelection() || copyCommand ||
-            isShiftSelection(event) || (event.what == evCommand &&
+            isShiftNavigation(event) || (event.what == evCommand &&
             (event.message.command == cmSelectAll || event.message.command == cmStartSelect))) {
-            if (event.what == evCommand && event.message.command == cmSelectAll)
+            if (event.what == evCommand &&
+                (event.message.command == cmSelectAll || event.message.command == cmStartSelect)) {
                 cancelPendingBlockSelection();
+                clearRectangleSelection();
+            }
             TFileEditor::handleEvent(event);
             return;
         }
@@ -1016,6 +1047,7 @@ private:
     }
 
     void setRectangleStart() {
+        discardLinearSelection();
         rectTop_ = rectBottom_ = lineNumber(curPtr);
         rectLeft_ = rectRight_ = charPos(lineStart(curPtr), curPtr);
         rectangleValid_ = false;
@@ -1024,6 +1056,7 @@ private:
     }
 
     void setRectangleEnd() {
+        discardLinearSelection();
         rectBottom_ = lineNumber(curPtr);
         rectRight_ = charPos(lineStart(curPtr), curPtr);
         rectangleValid_ = rectTop_ != rectBottom_ || rectLeft_ != rectRight_;
