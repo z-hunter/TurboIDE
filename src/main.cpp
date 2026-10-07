@@ -396,6 +396,7 @@ public:
     }
 
     void setDiagnosticMessage(std::string text) {
+        if (diagnosticMessage_ == text) return;
         diagnosticMessage_ = std::move(text);
         drawView();
     }
@@ -1080,6 +1081,7 @@ public:
     void clearMessages();
     void selectMessageIndex(size_t index);
     void setMessageStatus(const BuildMessage *message);
+    void updateMessageStatus();
     void hideMessages();
     void dismissMessages(BuildMessagesWindow *window);
     void dismissBuildPopup();
@@ -2379,12 +2381,6 @@ bool TurboIDEApp::saveBuildInputs(const BuildRequest &request) {
     }
 
     if (dirty.empty())
-        return true;
-    const ushort answer = messageBox("Save modified project/source files before building?",
-                                     mfInformation | mfYesNoCancel);
-    if (answer == cmCancel)
-        return false;
-    if (answer == cmNo)
         return true;
     bool saved = false;
     for (auto *editor : dirty) {
@@ -3914,8 +3910,27 @@ void TurboIDEApp::clearMessages() {
 
 void TurboIDEApp::setMessageStatus(const BuildMessage *message) {
     auto *status = dynamic_cast<IDEStatusLine *>(TProgram::statusLine);
-    if (status)
-        status->setDiagnosticMessage(message && message->hasLocation ? message->text : std::string{});
+    if (!status || !message || !message->hasLocation) {
+        if (status) status->setDiagnosticMessage({});
+        return;
+    }
+    const auto &text = message->display.empty() ? message->text : message->display;
+    const auto marker = text.find(": ");
+    status->setDiagnosticMessage(marker == std::string::npos ? text : text.substr(marker + 2));
+}
+
+void TurboIDEApp::updateMessageStatus() {
+    const auto *window = currentEditorWindow();
+    if (!window || !window->editor->fileName[0])
+        return;
+
+    const auto file = normalizedPathKey(std::filesystem::u8path(window->editor->fileName));
+    const int line = editorCurrentLine(window->editor);
+    const auto found = std::find_if(messages_.begin(), messages_.end(), [&](const BuildMessage &message) {
+        return message.hasLocation && message.line == line &&
+            _wcsicmp(normalizedPathKey(message.file).c_str(), file.c_str()) == 0;
+    });
+    setMessageStatus(found != messages_.end() ? &*found : nullptr);
 }
 
 void TurboIDEApp::selectMessageIndex(size_t index) {
@@ -4056,6 +4071,7 @@ void TurboIDEApp::handleEvent(TEvent &event) {
         (event.message.command == cmSave || event.message.command == cmSaveAs ||
          event.message.command == cmSaveAll);
     TApplication::handleEvent(event);
+    updateMessageStatus();
     if (saveCommand) saveDesktopSession();
     if (event.what != evCommand)
         return;
