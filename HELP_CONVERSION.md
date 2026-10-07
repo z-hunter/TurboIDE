@@ -32,8 +32,8 @@ proprietary file being present in a normal build.
 
 This is historical Borland compiler documentation. It does not describe the
 GCC/GDB toolchain used by TurboIDE. `TCHELP.TCH` and generated TVHC source stay
-local. The committed `reference/TCHELP.h32` is a temporary historical reference
-copied to `help/tchelp.h32` beside the executable.
+local. The committed `reference/TCHELP.h32` is the historical input to the
+merge; it is not copied to the release unchanged.
 
 TurboIDE-specific documentation is stored as the tracked TVHC source
 `docs/help/turboide.txt`. Every normal build compiles it to an intermediate
@@ -44,8 +44,10 @@ file: `help/tchelp.h32`.
 The merger preserves every historical topic, its context ID, and its internal
 links. TurboIDE-owned contexts start at 12000 and are copied after the legacy
 topics, so they can be opened by F1 through the same file. This permits a new
-topic to replace a legacy context later without changing the viewer, file
-selection, or keyboard workflow.
+topic to be added without changing the viewer, file selection, or keyboard
+workflow. Duplicate context IDs are a build error: rewriting an existing
+legacy topic requires an explicit merger policy change, not an accidental
+override in the new source.
 
 `Help → Contents`, `Help → Index`, and editor `Ctrl+F1` remain historical entry
 points for now. Once TurboIDE has its own general contents and index, these
@@ -107,18 +109,31 @@ alphabetical Index; Ctrl+F1 remains identifier lookup in the editor.
 ## Build and install locally
 
 Run from the repository root in PowerShell. Every `turboide` build compiles
-`docs/help/turboide.txt` through TVHC and copies both help databases beside the
-executable. The legacy converter tools remain opt-in.
+`docs/help/turboide.txt` through TVHC, merges it with the historical database,
+and copies the single result to `help/tchelp.h32` beside the executable. The
+normal regression check opens that merged result and verifies both legacy and
+TurboIDE-owned contexts:
+
+```powershell
+cmake -S . -B .build/help -G "Visual Studio 17 2022" -A x64 -DTURBOIDE_BUILD_TESTS=ON
+cmake --build .build/help --config Release --target turboide turboide_help_database_check
+& .\.build\help\Release\turboide_help_database_check.exe
+```
+
+The legacy THELP converter tools remain opt-in. Use this separate procedure
+only when changing or investigating `TCHELP.TCH` conversion:
 
 ```powershell
 cmake -S . -B .build/help -G "Visual Studio 17 2022" -A x64 -DTURBOIDE_BUILD_HELP_TOOLS=ON
-cmake --build .build/help --config Release --target turboide tch_to_tvhc help_database_check
+cmake --build .build/help --config Release --target tch_to_tvhc help_database_check
 & .\.build\help\Release\tch_to_tvhc.exe reference\TCHELP.TCH .build\help\tchelp.txt
 & .\.build\help\Release\turboide_tvhc.exe .build\help\tchelp.txt .build\help\tchelp.h32 .build\help\tchelp_ids.h
 & .\.build\help\Release\help_database_check.exe .build\help\tchelp.h32
 ```
 
-Then choose **Help → Contents**. F1 currently opens the same Contents topic.
+In the IDE, **Help → Contents** opens historical Contents. F1 opens the topic
+for the focused control or selected menu command and falls back to Contents
+when that topic is absent.
 In an editor, Ctrl+F1 opens the index entry matching the identifier under the
 cursor (or immediately before it), such as `printf`, `malloc`, `sizeof` or
 `struct`. The match ignores ASCII letter case. If there is no matching entry,

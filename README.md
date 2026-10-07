@@ -54,6 +54,18 @@ Ordinary developer builds do not download Ctags. They may opt into a local
 copy for testing through `TURBOIDE_CTAGS`; this override is compiled out of
 portable builds.
 
+## Code navigation
+
+**Search → Jump to symbol** (`Ctrl+F2`) uses Universal Ctags to open a matching
+definition. **Back from symbol** (`Ctrl+Shift+F2`) returns to the preceding
+location; **Word completion** (`Ctrl+Tab`) completes an entered prefix from the
+current buffer and the index; **Class browser** shows indexed C++ types and
+members. The active modified file is indexed from a temporary snapshot, so a
+Save is never required merely to navigate or complete a name. This is
+tag-based navigation, not compiler-semantic resolution. Developer details,
+limits, test procedure, and Ctags process contract are in
+[SYMBOL_NAVIGATION.md](SYMBOL_NAVIGATION.md).
+
 If Turbo Vision has already been downloaded, or if a local checkout is needed,
 pass its root directory to CMake through `FETCHCONTENT_SOURCE_DIR_TVISION`:
 
@@ -75,8 +87,10 @@ TurboIDE ships one native Turbo Vision help database,
 `help/tchelp.h32`, beside `turboide.exe`. It combines the temporary historical
 Borland C++ reference with TurboIDE-specific and rewritten topics. In the
 editor, Ctrl+F1 looks up the identifier under the cursor in the historical
-alphabetical index. Help source, context IDs, status-line hints, and conversion
-instructions are in
+alphabetical index. F1 on a focused TurboIDE control or selected menu item
+opens its contextual topic, falling back to legacy Contents when absent. Help
+source, context IDs, status-line hints, authoring style, merging, validation,
+and conversion instructions are in
 [HELP_CONVERSION.md](HELP_CONVERSION.md). Borland documentation describes its
 old compiler; TurboIDE uses GCC/GDB.
 
