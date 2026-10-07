@@ -69,13 +69,14 @@ Point to the root of the `tvision` repository—the directory containing
 sources while CMake configures, so use the revision pinned in `CMakeLists.txt`
 or verify a newer version first. Quote paths containing spaces.
 
-## Turbo C++ historical reference
+## Help
 
-**Help → Contents** opens a temporary historical Borland help database that
-CMake copies to `help/tchelp.h32` beside `turboide.exe`. In the editor,
-Ctrl+F1 looks up the identifier under the cursor through the database's
-alphabetical index. F1 still opens contextual help. Instructions for converting
-`TCHELP.TCH`, building TVHC, and installing the `.h32` file are in
+TurboIDE ships one native Turbo Vision help database,
+`help/tchelp.h32`, beside `turboide.exe`. It combines the temporary historical
+Borland C++ reference with TurboIDE-specific and rewritten topics. In the
+editor, Ctrl+F1 looks up the identifier under the cursor in the historical
+alphabetical index. Help source, context IDs, status-line hints, and conversion
+instructions are in
 [HELP_CONVERSION.md](HELP_CONVERSION.md). Borland documentation describes its
 old compiler; TurboIDE uses GCC/GDB.
 

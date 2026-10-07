@@ -66,6 +66,9 @@ int main() {
             assert(std::any_of(symbols.begin(), symbols.end(), [](const CodeSymbol &symbol) {
                 return symbol.name == "calculate" && symbol.line == 1;
             }));
+            assert(std::any_of(symbols.begin(), symbols.end(), [](const CodeSymbol &symbol) {
+                return symbol.name == "Widget" && symbol.kind == "s" && symbol.line == 1;
+            }));
         }
         std::filesystem::remove_all(integrationRoot);
     }

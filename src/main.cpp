@@ -171,6 +171,12 @@ constexpr ushort hcAddWatchDialog = 590;
 constexpr ushort hcEditorDialog = 899;
 constexpr ushort hcEditorTabSize = 899;
 constexpr ushort hcEditorPersistentBlocks = 899;
+// TurboIDE-native help contexts are merged into help/tchelp.h32 at build time.
+constexpr ushort hcTurboIDEContents = 12000;
+constexpr ushort hcJumpToSymbol = 12001;
+constexpr ushort hcBackFromSymbol = 12002;
+constexpr ushort hcWordCompletion = 12003;
+constexpr ushort hcClassBrowser = 12004;
 constexpr ushort cmHelpContents = 176;
 constexpr ushort cmHelpIndex = 177;
 
@@ -476,6 +482,10 @@ private:
         case hcEnvironmentMouse: return "Specify mouse settings";
         case hcEnvironmentStartup: return "Permanently change default startup options";
         case hcEnvironmentColors: return "Customize IDE colors for windows, menus, etc.";
+        case hcJumpToSymbol: return "Jump to the definition of the symbol at the cursor";
+        case hcBackFromSymbol: return "Return to the previous symbol location";
+        case hcWordCompletion: return "Complete the symbol before the cursor";
+        case hcClassBrowser: return "Browse classes, members, and inheritance";
         default: return "";
         }
     }
@@ -921,6 +931,36 @@ bool isCTagsSource(const std::filesystem::path &file) {
            _wcsicmp(extension.c_str(), L".inl") == 0;
 }
 
+std::optional<std::filesystem::path> writeEditorSnapshot(TFileEditor &editor,
+                                                          const std::filesystem::path &source) {
+    wchar_t directory[MAX_PATH]{};
+    const DWORD length = GetTempPathW(MAX_PATH, directory);
+    if (!length || length >= MAX_PATH)
+        return std::nullopt;
+    wchar_t name[MAX_PATH]{};
+    if (!GetTempFileNameW(directory, L"tid", 0, name))
+        return std::nullopt;
+    const std::filesystem::path temporary(name);
+    auto snapshot = temporary;
+    snapshot.replace_extension(source.extension());
+    if (!MoveFileW(temporary.c_str(), snapshot.c_str())) {
+        DeleteFileW(temporary.c_str());
+        return std::nullopt;
+    }
+    std::string text;
+    text.resize(editor.bufLen);
+    for (uint position = 0; position < editor.bufLen; ++position)
+        text[position] = editor.bufChar(position);
+    std::ofstream file(snapshot, std::ios::binary | std::ios::trunc);
+    file.write(text.data(), static_cast<std::streamsize>(text.size()));
+    if (!file) {
+        file.close();
+        DeleteFileW(snapshot.c_str());
+        return std::nullopt;
+    }
+    return snapshot;
+}
+
 bool isCompletionIdentifier(unsigned char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
            (c >= '0' && c <= '9') || c == '_' || c >= 0x80;
@@ -1073,7 +1113,7 @@ private:
     void backFromSymbol();
     void completeSymbol();
     void showClassBrowser();
-    bool ensureSymbolIndex(bool reportErrors = true, bool reportUnsaved = true);
+    bool ensureSymbolIndex(bool reportErrors = true);
     bool navigateToSymbol(const CodeSymbol &symbol);
     void clearSymbolIndex();
     void compileCurrent(bool runAfterBuild = false, bool debugAfterBuild = false);
@@ -1315,9 +1355,10 @@ private:
 class SymbolChoiceDialog : public TDialog {
 public:
     SymbolChoiceDialog(const std::vector<SymbolChoice> *choices, short *selection,
-                       const char *title)
+                       const char *title, ushort context)
         : TWindowInit(&TWindow::initFrame), TDialog(dialogBounds(), title),
           choices_(choices), selection_(selection) {
+        helpCtx = context;
         options |= ofCentered;
         const short listBottom = size.y - 4;
         auto *scrollBar = new TScrollBar(TRect(size.x - 2, 1, size.x - 1, listBottom));
@@ -1333,7 +1374,17 @@ public:
         list_->setState(sfSelected | sfActive | sfFocused, True);
     }
     void handleEvent(TEvent &event) override {
+        if (event.what == evKeyDown && TKey(event.keyDown) == kbF1) {
+            if (contextHelpHandler) contextHelpHandler(getHelpCtx());
+            clearEvent(event);
+            return;
+        }
         TDialog::handleEvent(event);
+        if (event.what == evCommand && event.message.command == cmHelp) {
+            if (contextHelpHandler) contextHelpHandler(getHelpCtx());
+            clearEvent(event);
+            return;
+        }
         *selection_ = list_->selected();
         if (event.what == evBroadcast && event.message.command == cmListItemSelected) {
             endModal(cmOK);
@@ -1352,11 +1403,12 @@ private:
     SymbolChoiceList *list_;
 };
 
-short chooseSymbol(const std::vector<SymbolChoice> &choices, const char *title, short initial = 0) {
+short chooseSymbol(const std::vector<SymbolChoice> &choices, const char *title,
+                   ushort context, short initial = 0) {
     if (choices.empty())
         return -1;
     short selection = std::clamp<short>(initial, 0, static_cast<short>(choices.size() - 1));
-    if (execDialog(new SymbolChoiceDialog(&choices, &selection, title), &selection) != cmOK)
+    if (execDialog(new SymbolChoiceDialog(&choices, &selection, title, context), &selection) != cmOK)
         return -1;
     return selection;
 }
@@ -3052,11 +3104,8 @@ void TurboIDEApp::clearSymbolIndex() {
     symbolIndexRoot_.clear();
 }
 
-bool TurboIDEApp::ensureSymbolIndex(bool reportErrors, bool reportUnsaved) {
+bool TurboIDEApp::ensureSymbolIndex(bool reportErrors) {
     auto *active = currentEditorWindow();
-    if (reportUnsaved && active && active->editor->modified)
-        messageBox("The symbol index uses saved files. Save this file to include recent edits.",
-                   mfInformation | mfOKButton);
     std::filesystem::path root = hasProject_ ? project_.file.parent_path() :
         active && active->editor->fileName[0]
             ? std::filesystem::u8path(active->editor->fileName).parent_path()
@@ -3068,6 +3117,43 @@ bool TurboIDEApp::ensureSymbolIndex(bool reportErrors, bool reportUnsaved) {
         files = project_.sources;
     else if (active && active->editor->fileName[0])
         files.push_back(std::filesystem::u8path(active->editor->fileName));
+
+    std::optional<std::filesystem::path> snapshot;
+    std::filesystem::path activeFile;
+    const bool hasActiveSource = active && active->editor->fileName[0] &&
+        isCTagsSource(std::filesystem::u8path(active->editor->fileName));
+    if (hasActiveSource) {
+        activeFile = std::filesystem::absolute(
+            std::filesystem::u8path(active->editor->fileName)).lexically_normal();
+    }
+    const auto activeIsListed = [&] {
+        return std::any_of(files.begin(), files.end(), [&](const auto &file) {
+            return _wcsicmp(std::filesystem::absolute(file).lexically_normal().c_str(),
+                            activeFile.c_str()) == 0;
+        });
+    };
+    if (hasActiveSource && active->editor->modified) {
+        snapshot = writeEditorSnapshot(*active->editor, activeFile);
+        if (!snapshot) {
+            if (reportErrors)
+                messageBox("Cannot create a temporary source snapshot for the symbol index.",
+                           mfError | mfOKButton);
+            return false;
+        }
+        bool replaced = false;
+        for (auto &file : files) {
+            const auto absolute = std::filesystem::absolute(file).lexically_normal();
+            if (_wcsicmp(absolute.c_str(), activeFile.c_str()) == 0) {
+                file = *snapshot;
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced)
+            files.push_back(*snapshot);
+    } else if (hasProject_ && hasActiveSource && !activeIsListed()) {
+        files.push_back(activeFile);
+    }
 
     std::vector<std::filesystem::path> existing;
     for (const auto &file : files) {
@@ -3115,7 +3201,7 @@ bool TurboIDEApp::ensureSymbolIndex(bool reportErrors, bool reportUnsaved) {
         fileSizes.push_back(size);
     }
 
-    bool current = symbolIndexRoot_ == root && symbolFiles_.size() == existing.size() &&
+    bool current = !snapshot && symbolIndexRoot_ == root && symbolFiles_.size() == existing.size() &&
         symbolWriteTimes_ == writeTimes && symbolFileSizes_ == fileSizes;
     if (current)
         for (size_t i = 0; i < existing.size(); ++i)
@@ -3129,10 +3215,19 @@ bool TurboIDEApp::ensureSymbolIndex(bool reportErrors, bool reportUnsaved) {
     std::vector<CodeSymbol> rebuilt;
     std::string error;
     if (!buildCtagsIndex(existing, root, rebuilt, error)) {
+        if (snapshot) DeleteFileW(snapshot->c_str());
         clearSymbolIndex();
         if (reportErrors)
             messageBox(error.c_str(), mfError | mfOKButton);
         return false;
+    }
+    if (snapshot) {
+        for (auto &symbol : rebuilt) {
+            std::error_code equivalentError;
+            if (std::filesystem::equivalent(symbol.file, *snapshot, equivalentError) && !equivalentError)
+                symbol.file = activeFile;
+        }
+        DeleteFileW(snapshot->c_str());
     }
     symbols_ = std::move(rebuilt);
     symbolFiles_ = std::move(existing);
@@ -3209,7 +3304,7 @@ void TurboIDEApp::jumpToSymbol() {
                    mfInformation | mfOKButton);
         return;
     }
-    const short selected = chooseSymbol(choices, "Jump to symbol");
+    const short selected = chooseSymbol(choices, "Jump to symbol", hcJumpToSymbol);
     if (selected >= 0)
         navigateToSymbol(choices[static_cast<size_t>(selected)].symbol);
 }
@@ -3264,7 +3359,7 @@ void TurboIDEApp::completeSymbol() {
         if (word.size() > prefix.size() && word.compare(0, prefix.size(), prefix) == 0)
             unique.insert(std::move(word));
     }
-    if (ensureSymbolIndex(false, false))
+    if (ensureSymbolIndex(false))
         for (const auto &symbol : symbols_)
             if (symbol.name.size() > prefix.size() &&
                 symbol.name.compare(0, prefix.size(), prefix) == 0)
@@ -3278,7 +3373,7 @@ void TurboIDEApp::completeSymbol() {
 }
 
 void TurboIDEApp::showClassBrowser() {
-    if (!ensureSymbolIndex(true, false))
+    if (!ensureSymbolIndex(true))
         return;
     std::vector<SymbolChoice> classes;
     std::string currentWord;
@@ -3296,7 +3391,7 @@ void TurboIDEApp::showClassBrowser() {
         messageBox("The symbol index contains no classes or structs.", mfInformation | mfOKButton);
         return;
     }
-    const short selectedClass = chooseSymbol(classes, "Class browser", initial);
+    const short selectedClass = chooseSymbol(classes, "Class browser", hcClassBrowser, initial);
     if (selectedClass < 0)
         return;
     const auto &klass = classes[static_cast<size_t>(selectedClass)].symbol;
@@ -3318,7 +3413,7 @@ void TurboIDEApp::showClassBrowser() {
             inheritanceHas(symbol.inherits, klass))
             related.push_back({symbol, "Child: " + symbolLabel(symbol, symbolIndexRoot_)});
     }
-    const short selected = chooseSymbol(related, "Class members and hierarchy");
+    const short selected = chooseSymbol(related, "Class members and hierarchy", hcClassBrowser);
     if (selected >= 0)
         navigateToSymbol(related[static_cast<size_t>(selected)].symbol);
 }
@@ -4237,10 +4332,10 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
             *new TMenuItem("~F~ind...", cmFind, TKey(kbNoKey)) +
             *new TMenuItem("~R~eplace...", cmReplace, TKey(kbNoKey)) +
             *new TMenuItem("Search ~a~gain", cmSearchAgain, TKey(kbNoKey)) + newLine() +
-            *new TMenuItem("Jump to s~y~mbol...", cmJumpToSymbol, kbCtrlF2, hcNoContext, "Ctrl+F2") +
-            *new TMenuItem("Back from symbol", cmBackFromSymbol, TKey(kbCtrlF2, kbShift), hcNoContext, "Ctrl+Shift+F2") +
-            *new TMenuItem("Word completion", cmWordCompletion, kbCtrlTab, hcNoContext, "Ctrl+Tab") +
-            *new TMenuItem("Class browser...", cmClassBrowser, TKey(kbNoKey)) +
+            *new TMenuItem("Jump to s~y~mbol...", cmJumpToSymbol, kbCtrlF2, hcJumpToSymbol, "Ctrl+F2") +
+            *new TMenuItem("Back from symbol", cmBackFromSymbol, TKey(kbCtrlF2, kbShift), hcBackFromSymbol, "Ctrl+Shift+F2") +
+            *new TMenuItem("Word completion", cmWordCompletion, kbCtrlTab, hcWordCompletion, "Ctrl+Tab") +
+            *new TMenuItem("Class browser...", cmClassBrowser, TKey(kbNoKey), hcClassBrowser) +
         *new TSubMenu("~R~un", kbAltR, hcRunMenu) +
             *new TMenuItem("~R~un", cmRun, kbCtrlF9, hcNoContext, "Ctrl-F9") +
             *new TMenuItem("User screen", cmUserScreen, kbAltF5, hcNoContext, "Alt-F5") +

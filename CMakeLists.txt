@@ -194,7 +194,43 @@ endif()
 file(WRITE "${_tv_editor_header}" "${_tv_undo_header_text}")
 file(WRITE "${_tv_editor_source}" "${_tv_undo_editor_text}")
 
+add_executable(turboide_tvhc "${tvision_SOURCE_DIR}/examples/tvhc/tvhc.cpp")
+target_link_libraries(turboide_tvhc PRIVATE tvision)
+target_include_directories(turboide_tvhc PRIVATE "${tvision_SOURCE_DIR}/include/tvision/compat/borland")
+target_compile_features(turboide_tvhc PRIVATE cxx_std_17)
+
+set(TURBOIDE_HELP_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/docs/help/turboide.txt")
+set(TURBOIDE_NATIVE_HELP_DATABASE "${CMAKE_CURRENT_BINARY_DIR}/turboide.h32")
+set(TURBOIDE_HELP_DATABASE "${CMAKE_CURRENT_BINARY_DIR}/tchelp.h32")
+set(TURBOIDE_HELP_CONTEXTS "${CMAKE_CURRENT_BINARY_DIR}/turboide_help_contexts.h")
+add_custom_command(
+    OUTPUT "${TURBOIDE_NATIVE_HELP_DATABASE}" "${TURBOIDE_HELP_CONTEXTS}"
+    COMMAND ${CMAKE_COMMAND} -E rm -f
+            "${TURBOIDE_NATIVE_HELP_DATABASE}" "${TURBOIDE_HELP_CONTEXTS}"
+    COMMAND $<TARGET_FILE:turboide_tvhc>
+            "${TURBOIDE_HELP_SOURCE}" "${TURBOIDE_NATIVE_HELP_DATABASE}" "${TURBOIDE_HELP_CONTEXTS}"
+    DEPENDS turboide_tvhc "${TURBOIDE_HELP_SOURCE}"
+    COMMENT "Compiling TurboIDE help database"
+    VERBATIM
+)
+add_executable(turboide_help_merge tools/merge_help.cpp)
+target_link_libraries(turboide_help_merge PRIVATE tvision)
+target_compile_features(turboide_help_merge PRIVATE cxx_std_17)
+add_custom_command(
+    OUTPUT "${TURBOIDE_HELP_DATABASE}"
+    COMMAND ${CMAKE_COMMAND} -E rm -f "${TURBOIDE_HELP_DATABASE}"
+    COMMAND $<TARGET_FILE:turboide_help_merge>
+            "${CMAKE_CURRENT_SOURCE_DIR}/reference/TCHELP.h32"
+            "${TURBOIDE_NATIVE_HELP_DATABASE}" "${TURBOIDE_HELP_DATABASE}"
+    DEPENDS turboide_help_merge "${CMAKE_CURRENT_SOURCE_DIR}/reference/TCHELP.h32"
+            "${TURBOIDE_NATIVE_HELP_DATABASE}"
+    COMMENT "Merging TurboIDE topics into the legacy help database"
+    VERBATIM
+)
+add_custom_target(turboide_help DEPENDS "${TURBOIDE_HELP_DATABASE}")
+
 add_executable(turboide src/main.cpp src/build.cpp src/project.cpp src/run.cpp src/debugger.cpp src/syntax.cpp src/editor_features.cpp src/settings.cpp src/desktop_session.cpp src/legacy_help.cpp src/symbol_index.cpp)
+add_dependencies(turboide turboide_help)
 target_compile_features(turboide PRIVATE cxx_std_17)
 target_link_libraries(turboide PRIVATE tvision)
 if(TURBOIDE_ALLOW_EXTERNAL_CTAGS)
@@ -219,8 +255,10 @@ add_custom_command(TARGET turboide POST_BUILD
             "$<TARGET_FILE_DIR:turboide>/cfgfiles/cpmacros.pmc"
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:turboide>/help"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_CURRENT_SOURCE_DIR}/reference/TCHELP.h32"
+            "${TURBOIDE_HELP_DATABASE}"
             "$<TARGET_FILE_DIR:turboide>/help/tchelp.h32"
+    COMMAND ${CMAKE_COMMAND} -E rm -f
+            "$<TARGET_FILE_DIR:turboide>/help/turboide.h32"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" "$<TARGET_FILE_DIR:turboide>/LICENSE"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -247,11 +285,6 @@ endif()
 
 option(TURBOIDE_BUILD_HELP_TOOLS "Build optional legacy help conversion tools" OFF)
 if(TURBOIDE_BUILD_HELP_TOOLS)
-    add_executable(tvhc "${tvision_SOURCE_DIR}/examples/tvhc/tvhc.cpp")
-    target_link_libraries(tvhc PRIVATE tvision)
-    target_include_directories(tvhc PRIVATE "${tvision_SOURCE_DIR}/include/tvision/compat/borland")
-    target_compile_features(tvhc PRIVATE cxx_std_17)
-
     add_executable(tch_to_tvhc tools/tch_to_tvhc.cpp)
     target_compile_features(tch_to_tvhc PRIVATE cxx_std_17)
 
@@ -262,6 +295,12 @@ endif()
 
 option(TURBOIDE_BUILD_TESTS "Build TurboIDE integration tests" OFF)
 if(TURBOIDE_BUILD_TESTS)
+    add_executable(turboide_help_database_check tests/turboide_help_database_check.cpp)
+    add_dependencies(turboide_help_database_check turboide_help)
+    target_link_libraries(turboide_help_database_check PRIVATE tvision)
+    target_compile_features(turboide_help_database_check PRIVATE cxx_std_17)
+    target_compile_definitions(turboide_help_database_check PRIVATE
+        TURBOIDE_HELP_DATABASE="${TURBOIDE_HELP_DATABASE}")
     add_executable(run_interrupt_test tests/run_interrupt_test.cpp src/run.cpp)
     target_compile_features(run_interrupt_test PRIVATE cxx_std_17)
     add_executable(gdb_mi_self_check tests/gdb_mi_self_check.cpp)

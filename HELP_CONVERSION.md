@@ -1,4 +1,4 @@
-# Borland help conversion
+# Help databases and authoring
 
 ## Format and strategy
 
@@ -21,22 +21,57 @@ structural parse of this file found 2,857 screens, 2,063 index entries and
 THELP screens have no separate title field; a display heading is a useful
 title when present.
 
-The chosen path is **THELP -> TVHC source -> FBHF**. A standalone C++17 tool
+The historical conversion path is **THELP -> TVHC source -> FBHF**. A standalone C++17 tool
 decodes the original records and emits TVHC source with an explicit Contents
 topic. The pinned TVHC compiler produces the native database. TurboIDE reads
 that database through Turbo Vision; neither the IDE nor the converter requires
 Python. The converter accepts an input path, so it does not depend on the
 proprietary file being present in a normal build.
 
-## Compatibility and distribution
+## Shipped databases
 
 This is historical Borland compiler documentation. It does not describe the
 GCC/GDB toolchain used by TurboIDE. `TCHELP.TCH` and generated TVHC source stay
-local. The committed `reference/TCHELP.h32` is a temporary historical
-placeholder copied into the build output; it should be replaced with
-TurboIDE-specific documentation before distributing a release. TurboIDE opens
-help by database path and numeric topic ID, allowing another database and
-contextual entry points without changing the viewer.
+local. The committed `reference/TCHELP.h32` is a temporary historical reference
+copied to `help/tchelp.h32` beside the executable.
+
+TurboIDE-specific documentation is stored as the tracked TVHC source
+`docs/help/turboide.txt`. Every normal build compiles it to an intermediate
+database, then `tools/merge_help.cpp` copies its topics into the tracked legacy
+`reference/TCHELP.h32` database. The release contains one native Turbo Vision
+file: `help/tchelp.h32`.
+
+The merger preserves every historical topic, its context ID, and its internal
+links. TurboIDE-owned contexts start at 12000 and are copied after the legacy
+topics, so they can be opened by F1 through the same file. This permits a new
+topic to replace a legacy context later without changing the viewer, file
+selection, or keyboard workflow.
+
+`Help → Contents`, `Help → Index`, and editor `Ctrl+F1` remain historical entry
+points for now. Once TurboIDE has its own general contents and index, these
+commands can be rewritten in the combined database.
+
+## Writing TurboIDE help
+
+TVHC source uses `.topic Name=ContextId` headers. Normal text wraps to the
+viewer width. A line that begins with a space is fixed-layout text; use it for
+all visible lines in TurboIDE topics. Links use `{visible text:TopicName}`;
+TVHC reports unresolved target names while compiling. Begin the source with
+`;` for comments.
+
+Match the original Turbo C++ visual language: a title is framed by `▄` above
+and `▀` below, lists use `■`, and notices, dialogs, and tables use the same
+Unicode pseudographics (`╔═╗`, `┌─┐`, and so on) as the converted legacy
+topics. This source is UTF-8 and the native viewer already renders those
+characters from the historical database. Do not emit ANSI escape sequences:
+`THelpViewer` renders screen cells itself and does not interpret terminal
+formatting codes. Describe actual current behaviour and shortcuts, then link
+related topics at the end. Do not assign a new context below 12000 or above
+16379: the supplied TVHC compiler retains Borland's 16-bit topic-ID limit even
+when it writes a `.h32` database.
+
+The generated `.h32` and generated context header stay in the build directory;
+only `docs/help/turboide.txt` belongs in Git.
 
 ## UI context IDs
 
@@ -50,9 +85,16 @@ a missing topic falls back to Contents (10030).
 | Editor, Watches, Messages, Project windows | 402, 403, 405, 409 |
 | Find, Replace, Go to Line, Run Parameters, Add Watch dialogs | 562, 566, 568, 572, 590 |
 | Editor Options, Colors | 899, 915 |
+| TurboIDE native Contents, Jump to Symbol, Back from Symbol, Word Completion, Class Browser | 12000–12004 |
 
-`Help → Contents` always opens Contents; Shift+F1 opens the alphabetical Index;
-Ctrl+F1 remains identifier lookup in the editor.
+F1 resolves the focused dialog, window, or menu item through its `helpCtx`.
+For a selected menu item, Turbo Vision also passes this context to the status
+line. `IDEStatusLine::contextHint` supplies the short one-line explanation
+shown after `F1 Help`; add an entry there whenever a TurboIDE menu topic is
+introduced. This keeps the pointer and keyboard menu paths identical.
+
+`Help → Contents` currently opens legacy Contents; Shift+F1 opens the legacy
+alphabetical Index; Ctrl+F1 remains identifier lookup in the editor.
 
 ## References
 
@@ -64,15 +106,15 @@ Ctrl+F1 remains identifier lookup in the editor.
 
 ## Build and install locally
 
-Run from the repository root in PowerShell. The TVHC converter tools are opt-in.
-The checked-in `reference/TCHELP.h32` is a temporary historical placeholder and
-the default `turboide` build copies it beside the executable.
+Run from the repository root in PowerShell. Every `turboide` build compiles
+`docs/help/turboide.txt` through TVHC and copies both help databases beside the
+executable. The legacy converter tools remain opt-in.
 
 ```powershell
 cmake -S . -B .build/help -G "Visual Studio 17 2022" -A x64 -DTURBOIDE_BUILD_HELP_TOOLS=ON
-cmake --build .build/help --config Release --target turboide tch_to_tvhc tvhc help_database_check
+cmake --build .build/help --config Release --target turboide tch_to_tvhc help_database_check
 & .\.build\help\Release\tch_to_tvhc.exe reference\TCHELP.TCH .build\help\tchelp.txt
-& .\.build\help\Release\tvhc.exe .build\help\tchelp.txt .build\help\tchelp.h32 .build\help\tchelp_ids.h
+& .\.build\help\Release\turboide_tvhc.exe .build\help\tchelp.txt .build\help\tchelp.h32 .build\help\tchelp_ids.h
 & .\.build\help\Release\help_database_check.exe .build\help\tchelp.h32
 ```
 

@@ -1,0 +1,103 @@
+; TurboIDE native help source. Compile with the bundled Turbo Vision help compiler.
+; Keep a leading space on every displayed line: it preserves Borland-style layout.
+
+.topic TurboIDEContents=12000
+ ▄▄▄▄▄▄▄▄▄▄▄▄▄
+  TurboIDE Help
+ ▀▀▀▀▀▀▀▀▀▀▀▀▀
+ This screen describes TurboIDE features that
+ are not in the historical Borland C++ Help.
+
+ ╔══════════════════════════════════════════╗
+ ║ Use Tab to select a highlighted topic.   ║
+ ║ Press Enter to follow it, Backspace to    ║
+ ║ return, or Esc to leave Help.             ║
+ ╚══════════════════════════════════════════╝
+
+ Symbol Navigation
+ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+ {  Jump to Symbol :JumpToSymbol}
+ {  Back from Symbol:BackFromSymbol}
+ {  Word Completion :WordCompletion}
+ {  Class Browser   :ClassBrowser}
+
+.topic JumpToSymbol=12001
+ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+  Jump to Symbol
+ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+ Jump to Symbol opens the definition of the
+ identifier under the cursor. TurboIDE searches
+ the project symbol index, which is made with
+ the bundled Universal Ctags program.
+
+ If one definition matches, TurboIDE opens it
+ immediately. If several definitions match,
+ choose an entry from the list and press Enter.
+
+ If no identifier is under the cursor, the list
+ contains all indexed symbols. You can use it as
+ a quick outline of the current project.
+
+ Each successful jump is remembered. Choose
+ {Search|Back from Symbol:BackFromSymbol} to return to the
+ preceding editor position.
+
+ Key:
+   Ctrl+F2
+
+.topic BackFromSymbol=12002
+ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+  Back from Symbol
+ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+ Back from Symbol returns to the editor position
+ that preceded the last successful symbol jump.
+ Repeating this command walks back through
+ earlier jumps, including Class Browser jumps.
+
+ The command has no effect until you have made
+ a symbol-navigation jump.
+
+ Key:
+   Ctrl+Shift+F2
+
+.topic WordCompletion=12003
+ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+  Word Completion
+ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+ Type the first characters of an identifier and
+ choose this command to complete it. TurboIDE
+ collects matching words from the current editor
+ buffer and, when available, the symbol index.
+
+ The current buffer is used directly. Completion
+ remains available while a file has unsaved
+ changes.
+
+ Choose an entry from the completion list and
+ press Enter to insert its missing suffix. Press
+ Esc to leave the text unchanged.
+
+ Key:
+   Ctrl+Tab
+
+.topic ClassBrowser=12004
+ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+  Class Browser
+ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+ The Class Browser lists indexed C++ classes,
+ structs, and unions. Select a class to inspect
+ its definition, members, and known parent or
+ child classes.
+
+ Select an entry in the second list and press
+ Enter to open its source code.
+
+ The browser reads project files through the
+ symbol index. When the active editor has
+ unsaved changes, TurboIDE indexes a temporary
+ snapshot of that buffer. Newly typed classes
+ and structs are therefore available at once.
+
+ See Also:
+ {  Search|Jump to Symbol :JumpToSymbol}
+ {  Search|Back from Symbol:BackFromSymbol}
