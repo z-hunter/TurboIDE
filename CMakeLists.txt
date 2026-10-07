@@ -11,6 +11,28 @@ FetchContent_Declare(tvision
 FetchContent_MakeAvailable(tvision)
 
 option(TURBOIDE_BUNDLE_MINGW_RUNTIME "Copy MinGW runtime DLLs beside built executables" ON)
+option(TURBOIDE_BUNDLE_CTAGS "Copy pinned Universal Ctags into a portable output" OFF)
+option(TURBOIDE_ALLOW_EXTERNAL_CTAGS "Allow TURBOIDE_CTAGS in developer builds" ON)
+set(TURBOIDE_CTAGS_ARCHIVE "" CACHE FILEPATH "Verified Universal Ctags x64 ZIP")
+set(TURBOIDE_CTAGS_SHA256 "f1d027bebb64c20081357d83815d8c7601bd3f4499d38ba050e806e9e360dddf"
+    CACHE STRING "Expected SHA-256 of the pinned Universal Ctags ZIP")
+if(TURBOIDE_BUNDLE_CTAGS)
+    if(NOT EXISTS "${TURBOIDE_CTAGS_ARCHIVE}")
+        message(FATAL_ERROR "TURBOIDE_BUNDLE_CTAGS requires TURBOIDE_CTAGS_ARCHIVE. Run tools/fetch_ctags.ps1 first.")
+    endif()
+    file(SHA256 "${TURBOIDE_CTAGS_ARCHIVE}" _ctags_archive_hash)
+    if(NOT _ctags_archive_hash STREQUAL TURBOIDE_CTAGS_SHA256)
+        message(FATAL_ERROR "Universal Ctags archive checksum does not match the pinned manifest.")
+    endif()
+    set(_ctags_extract_dir "${CMAKE_BINARY_DIR}/_deps/turboide-ctags")
+    file(REMOVE_RECURSE "${_ctags_extract_dir}")
+    file(MAKE_DIRECTORY "${_ctags_extract_dir}")
+    file(ARCHIVE_EXTRACT INPUT "${TURBOIDE_CTAGS_ARCHIVE}" DESTINATION "${_ctags_extract_dir}")
+    if(NOT EXISTS "${_ctags_extract_dir}/ctags.exe" OR NOT EXISTS "${_ctags_extract_dir}/license")
+        message(FATAL_ERROR "Universal Ctags archive has an unexpected layout.")
+    endif()
+    set(TURBOIDE_ALLOW_EXTERNAL_CTAGS OFF CACHE BOOL "Allow TURBOIDE_CTAGS in developer builds" FORCE)
+endif()
 if(MINGW AND TURBOIDE_BUNDLE_MINGW_RUNTIME)
     get_filename_component(_mingw_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
     file(GLOB _mingw_runtime_dlls "${_mingw_bin}/libgcc_s_*-1.dll"
@@ -172,9 +194,14 @@ endif()
 file(WRITE "${_tv_editor_header}" "${_tv_undo_header_text}")
 file(WRITE "${_tv_editor_source}" "${_tv_undo_editor_text}")
 
-add_executable(turboide src/main.cpp src/build.cpp src/project.cpp src/run.cpp src/debugger.cpp src/syntax.cpp src/editor_features.cpp src/settings.cpp src/desktop_session.cpp src/legacy_help.cpp)
+add_executable(turboide src/main.cpp src/build.cpp src/project.cpp src/run.cpp src/debugger.cpp src/syntax.cpp src/editor_features.cpp src/settings.cpp src/desktop_session.cpp src/legacy_help.cpp src/symbol_index.cpp)
 target_compile_features(turboide PRIVATE cxx_std_17)
 target_link_libraries(turboide PRIVATE tvision)
+if(TURBOIDE_ALLOW_EXTERNAL_CTAGS)
+    target_compile_definitions(turboide PRIVATE TURBOIDE_ALLOW_EXTERNAL_CTAGS=1)
+else()
+    target_compile_definitions(turboide PRIVATE TURBOIDE_ALLOW_EXTERNAL_CTAGS=0)
+endif()
 if(MINGW AND TURBOIDE_BUNDLE_MINGW_RUNTIME)
     copy_mingw_runtime(turboide)
 endif()
@@ -194,8 +221,23 @@ add_custom_command(TARGET turboide POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/reference/TCHELP.h32"
             "$<TARGET_FILE_DIR:turboide>/help/tchelp.h32"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" "$<TARGET_FILE_DIR:turboide>/LICENSE"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
+            "$<TARGET_FILE_DIR:turboide>/THIRD_PARTY_NOTICES.md"
     VERBATIM
 )
+if(TURBOIDE_BUNDLE_CTAGS)
+    add_custom_command(TARGET turboide POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:turboide>/tools/ctags"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${_ctags_extract_dir}/ctags.exe" "$<TARGET_FILE_DIR:turboide>/tools/ctags/ctags.exe"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${_ctags_extract_dir}/license" "$<TARGET_FILE_DIR:turboide>/tools/ctags/license"
+        VERBATIM
+    )
+endif()
 if(MSVC)
     target_compile_options(turboide PRIVATE /utf-8)
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -249,4 +291,7 @@ if(TURBOIDE_BUILD_TESTS)
     target_link_libraries(editor_undo_test PRIVATE tvision)
     add_executable(desktop_session_test tests/desktop_session_test.cpp src/desktop_session.cpp)
     target_compile_features(desktop_session_test PRIVATE cxx_std_17)
+    add_executable(symbol_index_test tests/symbol_index_test.cpp src/symbol_index.cpp)
+    target_compile_features(symbol_index_test PRIVATE cxx_std_17)
+    target_compile_definitions(symbol_index_test PRIVATE TURBOIDE_ALLOW_EXTERNAL_CTAGS=1)
 endif()

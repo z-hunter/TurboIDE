@@ -3,6 +3,10 @@
 #define Uses_TFileEditor
 #include <tvision/tv.h>
 
+#include <cstddef>
+#include <string>
+#include <vector>
+
 constexpr ushort cmExpandPmacro = 140;
 constexpr ushort cmMatchBracket = 141;
 constexpr ushort cmRecordMacro = 142;
@@ -41,4 +45,6 @@ constexpr ushort cmMenuAlternateCase = 175;
 bool runEditorFeature(TFileEditor *editor, ushort command);
 bool isEditorFeatureRecording(TFileEditor *editor);
 bool expandPmacro(TFileEditor *editor, bool chooseFromList = false);
+size_t chooseEditorCompletion(TFileEditor *editor, const std::vector<std::string> &items,
+                              bool acceptSingle = true);
 uint pmacroTriggerStart(TFileEditor *editor);

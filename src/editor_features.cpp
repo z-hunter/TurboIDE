@@ -509,6 +509,11 @@ bool expandPmacro(TFileEditor *editor, bool chooseFromList) {
     return editor ? expandPseudoMacro(editor, chooseFromList) : false;
 }
 
+size_t chooseEditorCompletion(TFileEditor *editor, const std::vector<std::string> &items,
+                              bool acceptSingle) {
+    return editor ? chooseCompletion(editor, items, acceptSingle) : items.size();
+}
+
 uint pmacroTriggerStart(TFileEditor *editor) {
     if (!editor || editor->curPtr < 2)
         return std::numeric_limits<uint>::max();

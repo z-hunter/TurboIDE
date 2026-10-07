@@ -3,6 +3,8 @@
 A console IDE in the style of **Borland Turbo C**. Its interface is built on
 modern Turbo Vision port; user C and C++ sources are compiled with MinGW-w64 GCC.
 
+TurboIDE is free software under the [GNU GPL-3.0-or-later](LICENSE).
+
 The goal is to recreate the experience of Borland’s legendary classic Turbo C IDE from the DOS era in the modern Windows console.
 There are some enhancements, such as snippet support and macros, but care was taken to ensure they feel organic—as if, in some parallel universe, Borland still existed and continued developing projects for DOS :)
 
@@ -24,6 +26,33 @@ On the first configuration, CMake downloads the Turbo Vision revision pinned in
 `CMakeLists.txt` from [magiblot/tvision](https://github.com/magiblot/tvision)
 through `FetchContent`. No separate installation or manual include/library setup
 is needed; GitHub access is required for the first configuration.
+
+## Portable releases and Universal Ctags
+
+Official x64 portable releases include a pinned Universal Ctags binary at
+`tools\ctags\ctags.exe`. TurboIDE uses that private copy for symbol navigation;
+it does not inspect `PATH`, so another installed `ctags.exe` cannot affect the
+IDE. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for its license and
+source information.
+
+To prepare the portable output locally, fetch and verify the pinned archive,
+then configure with bundling enabled:
+
+```powershell
+$archive = .\tools\fetch_ctags.ps1
+cmake -S . -B .build\portable -G "Visual Studio 17 2022" -A x64 `
+  -DTURBOIDE_BUNDLE_CTAGS=ON -DTURBOIDE_CTAGS_ARCHIVE=$archive
+cmake --build .build\portable --config Release --target turboide
+```
+
+Zip the resulting `.build\portable\Release` directory without changing its
+layout. Publish the TurboIDE source and the matching Universal Ctags 6.2.1
+source alongside that ZIP in the same GitHub release; use
+`.\tools\fetch_ctags.ps1 -IncludeSource` to retrieve the latter.
+
+Ordinary developer builds do not download Ctags. They may opt into a local
+copy for testing through `TURBOIDE_CTAGS`; this override is compiled out of
+portable builds.
 
 If Turbo Vision has already been downloaded, or if a local checkout is needed,
 pass its root directory to CMake through `FETCHCONTENT_SOURCE_DIR_TVISION`:

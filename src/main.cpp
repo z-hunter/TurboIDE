@@ -45,6 +45,7 @@
 #include "project.h"
 #include "run.h"
 #include "settings.h"
+#include "symbol_index.h"
 #include "syntax.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -134,6 +135,10 @@ constexpr ushort cmDirectoriesBrowseLibraries = 182;
 constexpr ushort cmDirectoriesBrowseSources = 183;
 constexpr ushort cmDirectoriesBrowseOutput = 184;
 constexpr ushort cmRunConsoleInput = 185;
+constexpr ushort cmJumpToSymbol = 186;
+constexpr ushort cmBackFromSymbol = 187;
+constexpr ushort cmWordCompletion = 188;
+constexpr ushort cmClassBrowser = 189;
 
 // Borland TCHELP context IDs. Future TurboIDE documentation keeps these IDs.
 constexpr ushort hcEditWindow = 402;
@@ -903,6 +908,71 @@ std::string identifierAtCursor(TEditor &editor) {
     return word;
 }
 
+bool isCTagsSource(const std::filesystem::path &file) {
+    const auto extension = file.extension().wstring();
+    return _wcsicmp(extension.c_str(), L".c") == 0 ||
+           _wcsicmp(extension.c_str(), L".h") == 0 ||
+           _wcsicmp(extension.c_str(), L".cc") == 0 ||
+           _wcsicmp(extension.c_str(), L".cpp") == 0 ||
+           _wcsicmp(extension.c_str(), L".cxx") == 0 ||
+           _wcsicmp(extension.c_str(), L".hh") == 0 ||
+           _wcsicmp(extension.c_str(), L".hpp") == 0 ||
+           _wcsicmp(extension.c_str(), L".hxx") == 0 ||
+           _wcsicmp(extension.c_str(), L".inl") == 0;
+}
+
+bool isCompletionIdentifier(unsigned char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || c == '_' || c >= 0x80;
+}
+
+std::string scopeName(std::string_view scope) {
+    const size_t colon = scope.find(':');
+    return std::string(colon == std::string_view::npos ? scope : scope.substr(colon + 1));
+}
+
+std::string qualifiedSymbolName(const CodeSymbol &symbol) {
+    const auto scope = scopeName(symbol.scope);
+    return scope.empty() ? symbol.name : scope + "::" + symbol.name;
+}
+
+bool isClassSymbol(const CodeSymbol &symbol) {
+    return symbol.kind == "c" || symbol.kind == "s" || symbol.kind == "u" ||
+           symbol.kind == "class" || symbol.kind == "struct" || symbol.kind == "union";
+}
+
+std::string symbolLabel(const CodeSymbol &symbol, const std::filesystem::path &root) {
+    std::string label = symbol.name;
+    if (!symbol.scope.empty())
+        label += " (" + qualifiedSymbolName(symbol) + ")";
+    if (!symbol.kind.empty())
+        label += " [" + symbol.kind + "]";
+    std::error_code error;
+    auto file = std::filesystem::relative(symbol.file, root, error);
+    if (error)
+        file = symbol.file;
+    label += " — " + file.u8string() + ":" + std::to_string(symbol.line);
+    return label;
+}
+
+bool inheritanceHas(std::string_view inherits, const CodeSymbol &parent) {
+    const auto qualified = qualifiedSymbolName(parent);
+    size_t start = 0;
+    while (start <= inherits.size()) {
+        const size_t comma = inherits.find(',', start);
+        auto item = inherits.substr(start, comma == std::string_view::npos
+            ? inherits.size() - start : comma - start);
+        while (!item.empty() && item.front() == ' ') item.remove_prefix(1);
+        while (!item.empty() && item.back() == ' ') item.remove_suffix(1);
+        if (item == parent.name || item == qualified)
+            return true;
+        if (comma == std::string_view::npos)
+            break;
+        start = comma + 1;
+    }
+    return false;
+}
+
 ushort editDialog(int dialog, ...) {
     va_list args;
     va_start(args, dialog);
@@ -963,6 +1033,7 @@ public:
     void idle() override;
     void shutDown() override;
     bool goToLocation(const std::filesystem::path &file, int line, int column);
+    bool focusLocation(const std::filesystem::path &file, int line, int column);
     bool trackMessage(const std::filesystem::path &file, int line, int column,
                       size_t index);
     bool gotoMessage(size_t index);
@@ -998,6 +1069,13 @@ private:
     void showWindowList();
     void syncEditMenuState();
     void goToLine();
+    void jumpToSymbol();
+    void backFromSymbol();
+    void completeSymbol();
+    void showClassBrowser();
+    bool ensureSymbolIndex(bool reportErrors = true, bool reportUnsaved = true);
+    bool navigateToSymbol(const CodeSymbol &symbol);
+    void clearSymbolIndex();
     void compileCurrent(bool runAfterBuild = false, bool debugAfterBuild = false);
     void buildProject(bool runAfterBuild = false, bool debugAfterBuild = false);
     void debugProject();
@@ -1083,6 +1161,13 @@ private:
     std::vector<std::wstring> standaloneArguments_;
     std::filesystem::path standaloneRunDirectory_;
     std::filesystem::path startupProject_;
+    std::vector<CodeSymbol> symbols_;
+    std::vector<std::filesystem::path> symbolFiles_;
+    std::vector<std::filesystem::file_time_type> symbolWriteTimes_;
+    std::vector<std::uintmax_t> symbolFileSizes_;
+    std::filesystem::path symbolIndexRoot_;
+    struct SymbolPosition { std::filesystem::path file; uint offset; };
+    std::vector<SymbolPosition> symbolHistory_;
 };
 
 class ProjectFileList : public TListViewer {
@@ -1201,6 +1286,80 @@ private:
     WindowList *list_;
     short *selection_;
 };
+
+struct SymbolChoice {
+    CodeSymbol symbol;
+    std::string label;
+};
+
+class SymbolChoiceList : public TListViewer {
+public:
+    SymbolChoiceList(const TRect &bounds, TScrollBar *scrollBar,
+                     const std::vector<SymbolChoice> *choices)
+        : TListViewer(bounds, 1, nullptr, scrollBar), choices_(choices) {
+        setRange(static_cast<short>(choices_->size()));
+    }
+    void getText(char *dest, short item, short maxLen) override {
+        if (item < 0 || static_cast<size_t>(item) >= choices_->size()) {
+            *dest = 0;
+            return;
+        }
+        std::snprintf(dest, static_cast<size_t>(maxLen) + 1, "%s",
+                      (*choices_)[static_cast<size_t>(item)].label.c_str());
+    }
+    short selected() const { return focused; }
+private:
+    const std::vector<SymbolChoice> *choices_;
+};
+
+class SymbolChoiceDialog : public TDialog {
+public:
+    SymbolChoiceDialog(const std::vector<SymbolChoice> *choices, short *selection,
+                       const char *title)
+        : TWindowInit(&TWindow::initFrame), TDialog(dialogBounds(), title),
+          choices_(choices), selection_(selection) {
+        options |= ofCentered;
+        const short listBottom = size.y - 4;
+        auto *scrollBar = new TScrollBar(TRect(size.x - 2, 1, size.x - 1, listBottom));
+        list_ = new SymbolChoiceList(TRect(1, 1, size.x - 2, listBottom), scrollBar, choices_);
+        insert(list_);
+        insert(scrollBar);
+        insert(new TButton(TRect(size.x - 23, size.y - 3, size.x - 13, size.y - 1),
+                           "O~K~", cmOK, bfDefault));
+        insert(new TButton(TRect(size.x - 12, size.y - 3, size.x - 2, size.y - 1),
+                           "Cancel", cmCancel, bfNormal));
+        list_->focusItem(*selection_);
+        setCurrent(list_, TGroup::enterSelect);
+        list_->setState(sfSelected | sfActive | sfFocused, True);
+    }
+    void handleEvent(TEvent &event) override {
+        TDialog::handleEvent(event);
+        *selection_ = list_->selected();
+        if (event.what == evBroadcast && event.message.command == cmListItemSelected) {
+            endModal(cmOK);
+            clearEvent(event);
+        }
+    }
+private:
+    static TRect dialogBounds() {
+        const TRect extent = TProgram::deskTop->getExtent();
+        const short width = std::min<short>(78, extent.b.x - extent.a.x);
+        const short height = std::min<short>(20, extent.b.y - extent.a.y);
+        return TRect(0, 0, width, height);
+    }
+    const std::vector<SymbolChoice> *choices_;
+    short *selection_;
+    SymbolChoiceList *list_;
+};
+
+short chooseSymbol(const std::vector<SymbolChoice> &choices, const char *title, short initial = 0) {
+    if (choices.empty())
+        return -1;
+    short selection = std::clamp<short>(initial, 0, static_cast<short>(choices.size() - 1));
+    if (execDialog(new SymbolChoiceDialog(&choices, &selection, title), &selection) != cmOK)
+        return -1;
+    return selection;
+}
 
 class BuildProgressWindow : public TDialog {
 public:
@@ -1823,6 +1982,8 @@ bool TurboIDEApp::activateProject(const std::filesystem::path &file, bool showWi
     if (debugger_) stopDebuggee();
     saveDesktopSession();
     if (projectWindow_) projectWindow_->close();
+    clearSymbolIndex();
+    symbolHistory_.clear();
     project_ = std::move(loaded);
     hasProject_ = true;
     breakpoints_.clear();
@@ -2090,6 +2251,8 @@ void TurboIDEApp::closeProject() {
         messageBox("Could not save the project desktop file.", mfError | mfOKButton);
     if (debugger_) stopDebuggee();
     if (projectWindow_) projectWindow_->close();
+    clearSymbolIndex();
+    symbolHistory_.clear();
     project_ = {};
     hasProject_ = false;
     breakpoints_.clear();
@@ -2881,6 +3044,285 @@ void TurboIDEApp::goToLine() {
     editor->trackCursor(True);
 }
 
+void TurboIDEApp::clearSymbolIndex() {
+    symbols_.clear();
+    symbolFiles_.clear();
+    symbolWriteTimes_.clear();
+    symbolFileSizes_.clear();
+    symbolIndexRoot_.clear();
+}
+
+bool TurboIDEApp::ensureSymbolIndex(bool reportErrors, bool reportUnsaved) {
+    auto *active = currentEditorWindow();
+    if (reportUnsaved && active && active->editor->modified)
+        messageBox("The symbol index uses saved files. Save this file to include recent edits.",
+                   mfInformation | mfOKButton);
+    std::filesystem::path root = hasProject_ ? project_.file.parent_path() :
+        active && active->editor->fileName[0]
+            ? std::filesystem::u8path(active->editor->fileName).parent_path()
+            : std::filesystem::current_path();
+    root = std::filesystem::absolute(root).lexically_normal();
+
+    std::vector<std::filesystem::path> files;
+    if (hasProject_)
+        files = project_.sources;
+    else if (active && active->editor->fileName[0])
+        files.push_back(std::filesystem::u8path(active->editor->fileName));
+
+    std::vector<std::filesystem::path> existing;
+    for (const auto &file : files) {
+        if (!isCTagsSource(file))
+            continue;
+        std::error_code error;
+        if (!std::filesystem::is_regular_file(file, error) || error)
+            continue;
+        const auto absolute = std::filesystem::absolute(file).lexically_normal();
+        const bool duplicate = std::any_of(existing.begin(), existing.end(), [&](const auto &item) {
+            return _wcsicmp(item.c_str(), absolute.c_str()) == 0;
+        });
+        if (!duplicate)
+            existing.push_back(absolute);
+    }
+    if (existing.empty()) {
+        if (reportErrors)
+            messageBox(hasProject_ ? "The project has no existing C/C++ files to index."
+                                   : "Open a saved C/C++ file or project first.",
+                       mfInformation | mfOKButton);
+        return false;
+    }
+
+    std::vector<std::filesystem::file_time_type> writeTimes;
+    std::vector<std::uintmax_t> fileSizes;
+    writeTimes.reserve(existing.size());
+    fileSizes.reserve(existing.size());
+    for (const auto &file : existing) {
+        std::error_code error;
+        const auto time = std::filesystem::last_write_time(file, error);
+        if (error) {
+            if (reportErrors)
+                messageBox("Cannot read a source file timestamp for the symbol index.",
+                           mfError | mfOKButton);
+            return false;
+        }
+        const auto size = std::filesystem::file_size(file, error);
+        if (error) {
+            if (reportErrors)
+                messageBox("Cannot read a source file size for the symbol index.",
+                           mfError | mfOKButton);
+            return false;
+        }
+        writeTimes.push_back(time);
+        fileSizes.push_back(size);
+    }
+
+    bool current = symbolIndexRoot_ == root && symbolFiles_.size() == existing.size() &&
+        symbolWriteTimes_ == writeTimes && symbolFileSizes_ == fileSizes;
+    if (current)
+        for (size_t i = 0; i < existing.size(); ++i)
+            if (_wcsicmp(symbolFiles_[i].c_str(), existing[i].c_str()) != 0) {
+                current = false;
+                break;
+            }
+    if (current)
+        return true;
+
+    std::vector<CodeSymbol> rebuilt;
+    std::string error;
+    if (!buildCtagsIndex(existing, root, rebuilt, error)) {
+        clearSymbolIndex();
+        if (reportErrors)
+            messageBox(error.c_str(), mfError | mfOKButton);
+        return false;
+    }
+    symbols_ = std::move(rebuilt);
+    symbolFiles_ = std::move(existing);
+    symbolWriteTimes_ = std::move(writeTimes);
+    symbolFileSizes_ = std::move(fileSizes);
+    symbolIndexRoot_ = root;
+    return true;
+}
+
+bool TurboIDEApp::navigateToSymbol(const CodeSymbol &symbol) {
+    TEditWindow *source = currentEditorWindow();
+    SymbolPosition previous;
+    bool remember = source && source->editor->fileName[0];
+    if (remember) {
+        previous.file = std::filesystem::u8path(source->editor->fileName);
+        previous.offset = source->editor->curPtr;
+    }
+    if (!focusLocation(symbol.file, symbol.line, 1))
+        return false;
+    for (TView *view = deskTop->first(); view; view = view->nextView())
+        if (auto *window = dynamic_cast<TEditWindow *>(view))
+            setEditorDiagnostic(window->editor, 0);
+    if (remember)
+        symbolHistory_.push_back(std::move(previous));
+    return true;
+}
+
+void TurboIDEApp::jumpToSymbol() {
+    auto *window = currentEditorWindow();
+    if (!window || !ensureSymbolIndex())
+        return;
+    const std::string word = identifierAtCursor(*window->editor);
+    std::vector<size_t> matches;
+    for (size_t i = 0; i < symbols_.size(); ++i) {
+        const auto &symbol = symbols_[i];
+        const auto qualified = qualifiedSymbolName(symbol);
+        if (word.empty() || symbol.name == word || qualified == word ||
+            (qualified.size() > word.size() && qualified.compare(qualified.size() - word.size(),
+                word.size(), word) == 0 && qualified[qualified.size() - word.size() - 1] == ':' ))
+            matches.push_back(i);
+    }
+    if (!word.empty()) {
+        std::vector<size_t> exact;
+        for (size_t index : matches)
+            if (symbols_[index].name == word || qualifiedSymbolName(symbols_[index]) == word)
+                exact.push_back(index);
+        if (exact.size() == 1) {
+            navigateToSymbol(symbols_[exact.front()]);
+            return;
+        }
+        if (!exact.empty())
+            matches = std::move(exact);
+        else {
+            matches.clear();
+            for (size_t i = 0; i < symbols_.size(); ++i)
+                if (symbols_[i].name.compare(0, word.size(), word) == 0)
+                    matches.push_back(i);
+        }
+    }
+    std::sort(matches.begin(), matches.end(), [&](size_t left, size_t right) {
+        const auto &a = symbols_[left];
+        const auto &b = symbols_[right];
+        if (a.name != b.name) return a.name < b.name;
+        if (a.file != b.file) return a.file < b.file;
+        return a.line < b.line;
+    });
+    std::vector<SymbolChoice> choices;
+    choices.reserve(matches.size());
+    for (size_t index : matches)
+        choices.push_back({symbols_[index], symbolLabel(symbols_[index], symbolIndexRoot_)});
+    if (choices.empty()) {
+        messageBox(word.empty() ? "The symbol index contains no definitions."
+                                : "No matching symbol was found.",
+                   mfInformation | mfOKButton);
+        return;
+    }
+    const short selected = chooseSymbol(choices, "Jump to symbol");
+    if (selected >= 0)
+        navigateToSymbol(choices[static_cast<size_t>(selected)].symbol);
+}
+
+void TurboIDEApp::backFromSymbol() {
+    if (symbolHistory_.empty()) {
+        messageBox("There is no earlier symbol location.", mfInformation | mfOKButton);
+        return;
+    }
+    const auto previous = symbolHistory_.back();
+    if (!focusLocation(previous.file, 1, 1)) {
+        messageBox("The previous source file is no longer available.", mfError | mfOKButton);
+        return;
+    }
+    symbolHistory_.pop_back();
+    auto *window = currentEditorWindow();
+    if (!window)
+        return;
+    moveEditorCursor(window->editor, std::min<uint>(previous.offset, window->editor->bufLen));
+    window->editor->trackCursor(True);
+}
+
+void TurboIDEApp::completeSymbol() {
+    auto *window = currentEditorWindow();
+    if (!window)
+        return;
+    TFileEditor *editor = window->editor;
+    uint first = editor->curPtr;
+    while (first > 0 && isCompletionIdentifier(
+        static_cast<unsigned char>(editor->bufChar(first - 1))))
+        --first;
+    std::string prefix;
+    for (uint at = first; at < editor->curPtr; ++at)
+        prefix.push_back(editor->bufChar(at));
+    if (prefix.empty()) {
+        messageBox("Type the beginning of a symbol first.", mfInformation | mfOKButton);
+        return;
+    }
+    std::set<std::string> unique;
+    for (uint position = 0; position < editor->bufLen;) {
+        if (!isCompletionIdentifier(static_cast<unsigned char>(editor->bufChar(position)))) {
+            ++position;
+            continue;
+        }
+        const uint start = position;
+        while (position < editor->bufLen && isCompletionIdentifier(
+            static_cast<unsigned char>(editor->bufChar(position))))
+            ++position;
+        std::string word;
+        for (uint i = start; i < position; ++i)
+            word.push_back(editor->bufChar(i));
+        if (word.size() > prefix.size() && word.compare(0, prefix.size(), prefix) == 0)
+            unique.insert(std::move(word));
+    }
+    if (ensureSymbolIndex(false, false))
+        for (const auto &symbol : symbols_)
+            if (symbol.name.size() > prefix.size() &&
+                symbol.name.compare(0, prefix.size(), prefix) == 0)
+                unique.insert(symbol.name);
+    std::vector<std::string> names(unique.begin(), unique.end());
+    const size_t selected = chooseEditorCompletion(editor, names, true);
+    if (selected >= names.size())
+        return;
+    const auto &suffix = names[selected].substr(prefix.size());
+    editor->insertText(suffix.data(), static_cast<uint>(suffix.size()), False);
+}
+
+void TurboIDEApp::showClassBrowser() {
+    if (!ensureSymbolIndex(true, false))
+        return;
+    std::vector<SymbolChoice> classes;
+    std::string currentWord;
+    if (auto *window = currentEditorWindow())
+        currentWord = identifierAtCursor(*window->editor);
+    short initial = 0;
+    for (const auto &symbol : symbols_) {
+        if (!isClassSymbol(symbol))
+            continue;
+        if (symbol.name == currentWord || qualifiedSymbolName(symbol) == currentWord)
+            initial = static_cast<short>(classes.size());
+        classes.push_back({symbol, symbolLabel(symbol, symbolIndexRoot_)});
+    }
+    if (classes.empty()) {
+        messageBox("The symbol index contains no classes or structs.", mfInformation | mfOKButton);
+        return;
+    }
+    const short selectedClass = chooseSymbol(classes, "Class browser", initial);
+    if (selectedClass < 0)
+        return;
+    const auto &klass = classes[static_cast<size_t>(selectedClass)].symbol;
+    const std::string qualified = qualifiedSymbolName(klass);
+    std::vector<SymbolChoice> related;
+    related.push_back({klass, "This class: " + qualified + " — " +
+        klass.file.filename().u8string() + ":" + std::to_string(klass.line)});
+    const auto isSelectedClass = [&](const CodeSymbol &symbol) {
+        return symbol.file == klass.file && symbol.line == klass.line &&
+               symbol.name == klass.name && symbol.scope == klass.scope;
+    };
+    for (const auto &symbol : symbols_) {
+        if (!isClassSymbol(symbol) && scopeName(symbol.scope) == qualified)
+            related.push_back({symbol, "Member: " + symbolLabel(symbol, symbolIndexRoot_)});
+        if (isClassSymbol(symbol) && !isSelectedClass(symbol) &&
+            inheritanceHas(klass.inherits, symbol))
+            related.push_back({symbol, "Parent: " + symbolLabel(symbol, symbolIndexRoot_)});
+        if (isClassSymbol(symbol) && !isSelectedClass(symbol) &&
+            inheritanceHas(symbol.inherits, klass))
+            related.push_back({symbol, "Child: " + symbolLabel(symbol, symbolIndexRoot_)});
+    }
+    const short selected = chooseSymbol(related, "Class members and hierarchy");
+    if (selected >= 0)
+        navigateToSymbol(related[static_cast<size_t>(selected)].symbol);
+}
+
 std::vector<DebugBreakpoint> TurboIDEApp::allBreakpoints() const {
     std::vector<DebugBreakpoint> result;
     for (const auto &entry : breakpoints_)
@@ -3407,7 +3849,7 @@ void TurboIDEApp::navigateMessage(bool forward) {
     showMessages();
 }
 
-bool TurboIDEApp::goToLocation(const std::filesystem::path &file, int line, int column) {
+bool TurboIDEApp::focusLocation(const std::filesystem::path &file, int line, int column) {
     const auto target = std::filesystem::path(normalizedPathKey(file));
     TEditWindow *editorWindow = nullptr;
     for (TView *view = deskTop->first(); view; view = view->nextView()) {
@@ -3443,9 +3885,6 @@ bool TurboIDEApp::goToLocation(const std::filesystem::path &file, int line, int 
     if (!editorWindow)
         return false;
 
-    for (TView *view = deskTop->first(); view; view = view->nextView())
-        if (auto *window = dynamic_cast<TEditWindow *>(view))
-            setEditorDiagnostic(window->editor, 0);
     deskTop->setCurrent(editorWindow, TGroup::enterSelect);
     uint position = 0;
     for (int currentLine = 1; currentLine < line && position < editorWindow->editor->bufLen; ++currentLine)
@@ -3455,7 +3894,17 @@ bool TurboIDEApp::goToLocation(const std::filesystem::path &file, int line, int 
         position = std::min<uint>(editorWindow->editor->bufLen, position + static_cast<uint>(column - 1));
     moveEditorCursor(editorWindow->editor, position);
     editorWindow->editor->trackCursor(True);
-    setEditorDiagnostic(editorWindow->editor, line);
+    return true;
+}
+
+bool TurboIDEApp::goToLocation(const std::filesystem::path &file, int line, int column) {
+    if (!focusLocation(file, line, column))
+        return false;
+    for (TView *view = deskTop->first(); view; view = view->nextView())
+        if (auto *window = dynamic_cast<TEditWindow *>(view))
+            setEditorDiagnostic(window->editor, 0);
+    if (auto *window = currentEditorWindow())
+        setEditorDiagnostic(window->editor, line);
     return true;
 }
 
@@ -3463,7 +3912,13 @@ void TurboIDEApp::handleEvent(TEvent &event) {
     syncEditMenuState();
     if (event.what == evKeyDown && (!TProgram::application ||
         TProgram::application->current == TProgram::deskTop)) {
-        if (event.keyDown.keyCode == kbCtrlF1) {
+        if (event.keyDown.keyCode == kbCtrlF2) {
+            if (currentEditorWindow()) {
+                clearEvent(event);
+                jumpToSymbol();
+                return;
+            }
+        } else if (event.keyDown.keyCode == kbCtrlF1) {
             if (auto *window = currentEditorWindow()) {
                 const std::string word = identifierAtCursor(*window->editor);
                 clearEvent(event);
@@ -3659,6 +4114,18 @@ void TurboIDEApp::handleEvent(TEvent &event) {
     case cmGoToLine:
         goToLine();
         break;
+    case cmJumpToSymbol:
+        jumpToSymbol();
+        break;
+    case cmBackFromSymbol:
+        backFromSymbol();
+        break;
+    case cmWordCompletion:
+        completeSymbol();
+        break;
+    case cmClassBrowser:
+        showClassBrowser();
+        break;
     case cmShowMessages:
     case cmCompilerMessages:
         showMessages();
@@ -3769,7 +4236,11 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
         *new TSubMenu("~S~earch", kbAltS, hcSearchMenu) +
             *new TMenuItem("~F~ind...", cmFind, TKey(kbNoKey)) +
             *new TMenuItem("~R~eplace...", cmReplace, TKey(kbNoKey)) +
-            *new TMenuItem("Search ~a~gain", cmSearchAgain, TKey(kbNoKey)) +
+            *new TMenuItem("Search ~a~gain", cmSearchAgain, TKey(kbNoKey)) + newLine() +
+            *new TMenuItem("Jump to s~y~mbol...", cmJumpToSymbol, kbCtrlF2, hcNoContext, "Ctrl+F2") +
+            *new TMenuItem("Back from symbol", cmBackFromSymbol, TKey(kbCtrlF2, kbShift), hcNoContext, "Ctrl+Shift+F2") +
+            *new TMenuItem("Word completion", cmWordCompletion, kbCtrlTab, hcNoContext, "Ctrl+Tab") +
+            *new TMenuItem("Class browser...", cmClassBrowser, TKey(kbNoKey)) +
         *new TSubMenu("~R~un", kbAltR, hcRunMenu) +
             *new TMenuItem("~R~un", cmRun, kbCtrlF9, hcNoContext, "Ctrl-F9") +
             *new TMenuItem("User screen", cmUserScreen, kbAltF5, hcNoContext, "Alt-F5") +
@@ -3787,7 +4258,7 @@ TMenuBar *TurboIDEApp::initMenuBar(TRect r) {
             *new TMenuItem("~T~race into", cmDebugStepInto, kbF7, hcNoContext, "F7") +
             *new TMenuItem("Step ~o~ver", cmDebugStepOver, kbF8, hcNoContext, "F8") +
             *new TMenuItem("Toggle ~b~reakpoint", cmDebugToggleBreakpoint, kbCtrlF8, hcNoContext, "Ctrl-F8") +
-            *new TMenuItem("~S~top debugging", cmDebugStop, kbCtrlF2, hcNoContext, "Ctrl-F2") +
+            *new TMenuItem("~S~top debugging", cmDebugStop, TKey(kbNoKey)) +
             *new TMenuItem("Show ~l~ocals", cmShowLocals, TKey(kbNoKey)) +
             *new TMenuItem("Show ~w~atches", cmShowWatches, TKey(kbNoKey)) +
             *new TMenuItem("~A~dd watch...", cmAddWatch, kbCtrlF7, hcNoContext, "Ctrl-F7") +
