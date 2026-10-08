@@ -1,12 +1,16 @@
-# Retro-Turbo-IDE [WIP]
+# Retro-Turbo-C IDE 
 
 A console IDE in the style of **Borland Turbo C**. Its interface is built on
 modern Turbo Vision port; user C and C++ sources are compiled with MinGW-w64 GCC.
 
 TurboIDE is free software under the [GNU GPL-3.0-or-later](LICENSE).
 
-The goal is to recreate the experience of Borland’s legendary classic Turbo C IDE from the DOS era in the modern Windows console.
-There are some enhancements, such as snippet support and macros, but care was taken to ensure they feel organic—as if, in some parallel universe, Borland still existed and continued developing projects for DOS :)
+The goal is to recreate the authentic experience of Borland’s legendary classic IDE from the DOS era in the modern Windows console.
+There are some enhancements, such as
+- Snippet;
+- Macros;
+- Code navigation and Class Browser;
+but care was taken to ensure they feel organic—as if, in some parallel universe, Borland still existed and continued developing TUI projects :)
 
 [Download the latest pre-release](https://github.com/z-hunter/TurboIDE/releases).
 
