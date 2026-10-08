@@ -81,6 +81,26 @@ int main() {
     editor.handleEvent(event);
     assert(text(editor) == "abc");
 
+    SyntaxEditor indentation(TRect(0, 0, 80, 25), nullptr, nullptr, nullptr, "test.c");
+    group.insert(&indentation);
+    constexpr char block[] = "{\n    }\n";
+    std::memcpy(indentation.buffer + indentation.bufSize - sizeof(block) + 1, block, sizeof(block) - 1);
+    indentation.setBufLen(sizeof(block) - 1);
+    indentation.setCurPtr(2, 0);
+    event = command(cmNewLine);
+    indentation.handleEvent(event);
+    assert(text(indentation) == "{\n\n    }\n");
+
+    indentation.setBufLen(0);
+    indentation.setCurPtr(0, 0);
+    indentation.insertText("{", 1, False);
+    setEditorUseTabCharacters(true);
+    event = command(cmNewLine);
+    indentation.handleEvent(event);
+    assert(text(indentation) == "{\n\t");
+    setEditorUseTabCharacters(false);
+    group.remove(&indentation);
+
     SyntaxEditor diagnostic(TRect(0, 0, 80, 25), nullptr, nullptr, nullptr, "warning.c");
     group.insert(&diagnostic);
     constexpr char warningText[] = "abc\nxyz\n";

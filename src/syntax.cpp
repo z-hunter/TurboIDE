@@ -35,6 +35,7 @@ IDETheme &ideTheme() {
 
 namespace {
 bool defaultPersistentBlocks = true;
+bool useTabCharacters = false;
 
 enum SyntaxToken : unsigned char {
     tokenNormal,
@@ -714,16 +715,21 @@ private:
         const uint end = selEnd;
         std::string changed;
         const int width = requestedWidth > 0 ? requestedWidth : std::max(1, TEditor::tabSize);
-        const std::string indent(static_cast<size_t>(width), ' ');
+        const std::string indent = useTabCharacters && requestedWidth == 0
+            ? std::string(1, '\t') : std::string(static_cast<size_t>(width), ' ');
         bool lineBeginning = true;
         for (uint p = start; p < end;) {
             if (lineBeginning && direction > 0)
                 changed += indent;
             if (lineBeginning && direction < 0) {
-                int removed = 0;
-                while (p < end && removed < width && bufChar(p) == ' ') {
+                if (p < end && bufChar(p) == '\t')
                     p = nextChar(p);
-                    ++removed;
+                else {
+                    int removed = 0;
+                    while (p < end && removed < width && bufChar(p) == ' ') {
+                        p = nextChar(p);
+                        ++removed;
+                    }
                 }
             }
             if (p >= end) break;
@@ -1374,12 +1380,13 @@ private:
         while (p > 0) {
             const uint previous = prevChar(p);
             const char c = bufChar(previous);
-            if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+            if (c == ' ' || c == '\t') {
                 p = previous;
                 continue;
             }
             if (c == '{' && previous < tokens_.size() && tokens_[previous] == tokenNormal) {
-                const std::string indentation(static_cast<size_t>(std::max(1, TEditor::tabSize)), ' ');
+                const std::string indentation = useTabCharacters ? "\t" :
+                    std::string(static_cast<size_t>(std::max(1, TEditor::tabSize)), ' ');
                 insertAtCaret(indentation.data(), static_cast<uint>(indentation.size()));
                 trackCursor(True);
             }
@@ -1782,6 +1789,10 @@ bool editorSupportsPrefixKeys(TFileEditor *editor) {
 
 void setDefaultPersistentBlocks(bool enabled) {
     defaultPersistentBlocks = enabled;
+}
+
+void setEditorUseTabCharacters(bool enabled) {
+    useTabCharacters = enabled;
 }
 
 void setEditorPersistentBlocks(TFileEditor *editor, bool enabled) {

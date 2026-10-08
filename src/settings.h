@@ -6,6 +6,7 @@
 
 struct IDESettings {
     int tabSize = 8;
+    bool useTabCharacters = false;
     bool backupFiles = true;
     bool persistentBlocks = true;
     std::string defaultExtension = ".c";

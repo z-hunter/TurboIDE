@@ -39,6 +39,7 @@ void setEditorPrefixHint(TFileEditor *editor, int mode);
 void advanceEditorPrefixHintPage(TFileEditor *editor);
 bool editorSupportsPrefixKeys(TFileEditor *editor);
 void setDefaultPersistentBlocks(bool enabled);
+void setEditorUseTabCharacters(bool enabled);
 void setEditorPersistentBlocks(TFileEditor *editor, bool enabled);
 bool editorPersistentBlocks(TFileEditor *editor);
 void moveEditorCursor(TFileEditor *editor, uint position);

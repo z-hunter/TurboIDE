@@ -693,7 +693,7 @@ TDialog *createEditorDialog(TInputLine *&tabs, TInputLine *&extension,
         new TSItem("B~l~ock insert cursor",
         new TSItem("Find te~x~t at cursor", nullptr))))))))))))));
     options->helpCtx = hcEditorPersistentBlocks;
-    options->setButtonState(((1u << 13) - 1) & ~((1u << 0) | (1u << 8)), False);
+    options->setButtonState(((1u << 13) - 1) & ~((1u << 0) | (1u << 3) | (1u << 8)), False);
     dialog->insert(options);
     auto *highlight = new TInputLine(TRect(3, 13, 34, 14), 30);
     char highlightExtensions[] = "*.c;*.h;*.cc;*.cpp;*.hpp";
@@ -1833,6 +1833,7 @@ TurboIDEApp::TurboIDEApp(ConsoleInputMode startupInputMode)
     else
         TEditor::editorFlags &= ~efBackupFiles;
     setDefaultPersistentBlocks(settings_.persistentBlocks);
+    setEditorUseTabCharacters(settings_.useTabCharacters);
     TEditor::tabSize = settings_.tabSize;
     std::error_code directoryError;
     if (!settings_.currentDirectory.empty())
@@ -2585,6 +2586,7 @@ void TurboIDEApp::editEnvironment() {
     char tabValue[4]{};
     char extensionValue[16]{};
     ushort optionsValue = (settings_.backupFiles ? 1 : 0) |
+        (settings_.useTabCharacters ? 1 << 3 : 0) |
         (settings_.persistentBlocks ? 1 << 8 : 0);
     std::snprintf(tabValue, sizeof(tabValue), "%d", settings_.tabSize);
     std::snprintf(extensionValue, sizeof(extensionValue), "%s", settings_.defaultExtension.c_str());
@@ -2619,6 +2621,7 @@ void TurboIDEApp::editEnvironment() {
     if (extension[0] != '.') extension.insert(extension.begin(), '.');
     settings_.tabSize = tabSize;
     settings_.backupFiles = (optionsValue & 1) != 0;
+    settings_.useTabCharacters = (optionsValue & (1 << 3)) != 0;
     settings_.persistentBlocks = (optionsValue & (1 << 8)) != 0;
     settings_.defaultExtension = std::move(extension);
     if (settings_.backupFiles)
@@ -2626,6 +2629,7 @@ void TurboIDEApp::editEnvironment() {
     else
         TEditor::editorFlags &= ~efBackupFiles;
     setDefaultPersistentBlocks(settings_.persistentBlocks);
+    setEditorUseTabCharacters(settings_.useTabCharacters);
     TEditor::tabSize = tabSize;
     saveSettings(settings_);
     for (TView *view = deskTop->first(); view; view = view->nextView())
