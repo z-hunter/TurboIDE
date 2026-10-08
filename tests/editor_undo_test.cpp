@@ -15,6 +15,11 @@ public:
     void putEvent(TEvent &) override {}
 };
 
+class DrawBufferProbe final : public TDrawBuffer {
+public:
+    TColorAttr attribute(ushort position) const { return data[position].attribute; }
+};
+
 TEvent command(ushort value) {
     TEvent event{};
     event.what = evCommand;
@@ -75,6 +80,45 @@ int main() {
     event = command(cmUndo);
     editor.handleEvent(event);
     assert(text(editor) == "abc");
+
+    SyntaxEditor diagnostic(TRect(0, 0, 80, 25), nullptr, nullptr, nullptr, "warning.c");
+    group.insert(&diagnostic);
+    constexpr char warningText[] = "abc\nxyz\n";
+    std::memcpy(diagnostic.buffer + diagnostic.bufSize - sizeof(warningText) + 1,
+                warningText, sizeof(warningText) - 1);
+    diagnostic.setBufLen(sizeof(warningText) - 1);
+    setEditorDiagnostic(&diagnostic, 1, true);
+    DrawBufferProbe warningBuffer;
+    diagnostic.formatLine(warningBuffer, 0, 0, 3, ideTheme().normalText);
+    assert(warningBuffer.attribute(0) == ideTheme().warningLine);
+    diagnostic.setCurPtr(1, 0);
+    event = key('!');
+    diagnostic.handleEvent(event);
+    DrawBufferProbe normalBuffer;
+    diagnostic.formatLine(normalBuffer, 0, 0, 3, ideTheme().normalText);
+    assert(normalBuffer.attribute(0) == ideTheme().normalText);
+    group.remove(&diagnostic);
+
+    SyntaxEditor autoDiagnostic(TRect(0, 0, 80, 25), nullptr, nullptr, nullptr, "warnings.c");
+    group.insert(&autoDiagnostic);
+    std::memcpy(autoDiagnostic.buffer + autoDiagnostic.bufSize - sizeof(warningText) + 1,
+                warningText, sizeof(warningText) - 1);
+    autoDiagnostic.setBufLen(sizeof(warningText) - 1);
+    setEditorWarnings(&autoDiagnostic, {1, 2});
+    DrawBufferProbe firstWarningBuffer;
+    autoDiagnostic.formatLine(firstWarningBuffer, 0, 0, 3, ideTheme().normalText);
+    assert(firstWarningBuffer.attribute(0) == ideTheme().warningLine);
+    autoDiagnostic.setCurPtr(1, 0);
+    event = key('!');
+    autoDiagnostic.handleEvent(event);
+    DrawBufferProbe clearedWarningBuffer;
+    autoDiagnostic.formatLine(clearedWarningBuffer, 0, 0, 3, ideTheme().normalText);
+    assert(clearedWarningBuffer.attribute(0) == ideTheme().normalText);
+    DrawBufferProbe secondWarningBuffer;
+    autoDiagnostic.formatLine(secondWarningBuffer, autoDiagnostic.nextLine(0), 0, 3,
+                              ideTheme().normalText);
+    assert(secondWarningBuffer.attribute(0) == ideTheme().warningLine);
+    group.remove(&autoDiagnostic);
 
     pseudoMacros().push_back({"zz", "undo test", "SNIP", 0});
     editor.insertText("zz", 2, False);

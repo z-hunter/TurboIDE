@@ -23,6 +23,7 @@ struct IDETheme {
     TColorAttr number = 0x1C;
     TColorAttr preprocessor = 0x1D;
     TColorAttr diagnosticLine = 0x4E;
+    TColorAttr warningLine = 0x6E;
     TColorAttr executionLine = 0xE0;
     TColorAttr breakpointLine = 0x4F;
     TColorAttr matchingBracket = 0x4F;
@@ -30,7 +31,8 @@ struct IDETheme {
 };
 
 IDETheme &ideTheme();
-void setEditorDiagnostic(TFileEditor *editor, int line);
+void setEditorDiagnostic(TFileEditor *editor, int line, bool warning = false);
+void setEditorWarnings(TFileEditor *editor, const std::vector<int> &lines);
 void setEditorDebugState(TFileEditor *editor, const std::vector<int> &breakpoints,
                          int executionLine);
 void setEditorPrefixHint(TFileEditor *editor, int mode);

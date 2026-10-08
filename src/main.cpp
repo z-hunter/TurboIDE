@@ -1073,12 +1073,13 @@ public:
     void handleEvent(TEvent &event) override;
     void idle() override;
     void shutDown() override;
-    bool goToLocation(const std::filesystem::path &file, int line, int column);
+    bool goToLocation(const std::filesystem::path &file, int line, int column, bool warning = false);
     bool focusLocation(const std::filesystem::path &file, int line, int column);
     bool trackMessage(const std::filesystem::path &file, int line, int column,
                       size_t index);
     bool gotoMessage(size_t index);
     void clearMessages();
+    void applyWarningDiagnostics();
     void selectMessageIndex(size_t index);
     void setMessageStatus(const BuildMessage *message);
     void updateMessageStatus();
@@ -2938,6 +2939,7 @@ void TurboIDEApp::showBuildResult(BuildResult result) {
             messageIndex_ = static_cast<size_t>(std::distance(messages_.begin(), selected));
     }
     setMessageStatus(nullptr);
+    applyWarningDiagnostics();
 
     if (messagesWindow_)
         messagesWindow_->updateMessages();
@@ -3862,7 +3864,8 @@ void TurboIDEApp::hideMessages() {
 bool TurboIDEApp::trackMessage(const std::filesystem::path &file, int line, int column,
                                size_t index) {
     messageIndex_ = index;
-    if (!goToLocation(file, line, column))
+    if (!goToLocation(file, line, column,
+                      index < messages_.size() && messages_[index].kind == BuildMessageKind::warning))
         return false;
     setMessageStatus(index < messages_.size() ? &messages_[index] : nullptr);
     if (messagesWindow_) {
@@ -3878,7 +3881,8 @@ bool TurboIDEApp::gotoMessage(size_t index) {
     if (index >= messages_.size() || !messages_[index].hasLocation)
         return false;
     auto &selected = messages_[index];
-    bool opened = goToLocation(selected.file, selected.line, selected.column);
+    bool opened = goToLocation(selected.file, selected.line, selected.column,
+                               selected.kind == BuildMessageKind::warning);
     if (!opened && !std::filesystem::exists(selected.file)) {
         char fileName[MAXPATH]{};
         const auto suggested = selected.file.filename().u8string();
@@ -3887,7 +3891,8 @@ bool TurboIDEApp::gotoMessage(size_t index) {
                                                   fdOpenButton, 100, hcMessagesWindow), fileName) == cmCancel)
             return false;
         selected.file = std::filesystem::u8path(fileName);
-        opened = goToLocation(selected.file, selected.line, selected.column);
+        opened = goToLocation(selected.file, selected.line, selected.column,
+                              selected.kind == BuildMessageKind::warning);
     }
     if (!opened)
         return false;
@@ -3906,6 +3911,21 @@ void TurboIDEApp::clearMessages() {
     setMessageStatus(nullptr);
     if (messagesWindow_)
         messagesWindow_->updateMessages();
+}
+
+void TurboIDEApp::applyWarningDiagnostics() {
+    for (TView *view = deskTop->first(); view; view = view->nextView()) {
+        auto *window = dynamic_cast<TEditWindow *>(view);
+        if (!window || !window->editor->fileName[0])
+            continue;
+        const auto file = normalizedPathKey(std::filesystem::u8path(window->editor->fileName));
+        std::vector<int> lines;
+        for (const auto &message : messages_)
+            if (message.kind == BuildMessageKind::warning && message.hasLocation &&
+                _wcsicmp(normalizedPathKey(message.file).c_str(), file.c_str()) == 0)
+                lines.push_back(message.line);
+        setEditorWarnings(window->editor, lines);
+    }
 }
 
 void TurboIDEApp::setMessageStatus(const BuildMessage *message) {
@@ -3950,7 +3970,8 @@ void TurboIDEApp::navigateMessage(bool forward) {
         if (message.hasLocation) {
             if (messagesWindow_)
                 messagesWindow_->focusMessage(messageIndex_);
-            if (goToLocation(message.file, message.line, message.column)) {
+            if (goToLocation(message.file, message.line, message.column,
+                             message.kind == BuildMessageKind::warning)) {
                 setMessageStatus(&message);
                 return;
             }
@@ -4007,14 +4028,14 @@ bool TurboIDEApp::focusLocation(const std::filesystem::path &file, int line, int
     return true;
 }
 
-bool TurboIDEApp::goToLocation(const std::filesystem::path &file, int line, int column) {
+bool TurboIDEApp::goToLocation(const std::filesystem::path &file, int line, int column, bool warning) {
     if (!focusLocation(file, line, column))
         return false;
     for (TView *view = deskTop->first(); view; view = view->nextView())
         if (auto *window = dynamic_cast<TEditWindow *>(view))
             setEditorDiagnostic(window->editor, 0);
     if (auto *window = currentEditorWindow())
-        setEditorDiagnostic(window->editor, line);
+        setEditorDiagnostic(window->editor, line, warning);
     return true;
 }
 

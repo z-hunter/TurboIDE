@@ -129,6 +129,7 @@ public:
 
     Boolean insertBuffer(const char *text, uint offset, uint length, Boolean allowUndo,
                          Boolean selectText, Boolean raw = False) override {
+        clearDiagnosticIfEdited(selStart, selEnd);
         const bool implicit = historyDepth_ == 0 && !replayingHistory_;
         if (implicit)
             beginHistory(HistoryKind::other);
@@ -281,6 +282,7 @@ public:
         int x = 0;
         const uint triggerStart = pmacroTriggerStart(this);
         const int currentLine = lineNumber(linePtr);
+        const bool warningLine = warningLines_.count(currentLine) != 0;
         const int rectTop = std::min(rectTop_, rectBottom_);
         const int rectBottom = std::max(rectTop_, rectBottom_);
         const int rectLeft = std::min(rectLeft_, rectRight_);
@@ -307,10 +309,12 @@ public:
                 if (rectSelected)
                     drawBuffer.putAttribute(static_cast<ushort>(x), 0x70);
                 else if (!selected && (token != tokenNormal || linePtr == diagnosticLineStart_ ||
-                                  linePtr == executionLineStart_ || breakpointLine)) {
+                                  warningLine || linePtr == executionLineStart_ || breakpointLine)) {
                     TColorAttr attr = colorFor(token);
                     if (linePtr == diagnosticLineStart_)
-                        attr = ideTheme().diagnosticLine;
+                        attr = diagnosticIsWarning_ ? ideTheme().warningLine : ideTheme().diagnosticLine;
+                    else if (warningLine)
+                        attr = ideTheme().warningLine;
                     else if (linePtr == executionLineStart_)
                         attr = static_cast<TColorAttr>((attr & 0x0F) |
                             (ideTheme().executionLine & 0xF0));
@@ -332,8 +336,16 @@ public:
         }
     }
 
-    void setDiagnosticLine(int line) {
+    void setDiagnosticLine(int line, bool warning) {
         diagnosticLineStart_ = lineOffset(line);
+        diagnosticIsWarning_ = line > 0 && warning;
+        drawView();
+    }
+
+    void setWarningLines(const std::vector<int> &lines) {
+        warningLines_.clear();
+        for (int line : lines)
+            if (line > 0) warningLines_.insert(line);
         drawView();
     }
 
@@ -1253,6 +1265,7 @@ private:
         const std::string &insert = undo ? edit.removed : edit.inserted;
         const uint start = std::min(edit.position, bufLen);
         setSelect(start, std::min<uint>(start + static_cast<uint>(remove.size()), bufLen), False);
+        clearDiagnosticIfEdited(selStart, selEnd);
         TFileEditor::insertBuffer(insert.empty() ? nullptr : insert.data(), 0,
                                   static_cast<uint>(insert.size()), False, False, True);
     }
@@ -1467,6 +1480,24 @@ private:
         for (int current = 1; line > 0 && current < line && position < bufLen; ++current)
             position = nextLine(position);
         return line > 0 ? lineStart(position) : std::numeric_limits<uint>::max();
+    }
+
+    void clearDiagnosticIfEdited(uint start, uint end) {
+        const int firstLine = lineNumber(start);
+        const int lastLine = lineNumber(end > start ? prevChar(end) : start);
+        for (auto it = warningLines_.begin(); it != warningLines_.end();) {
+            if (*it >= firstLine && *it <= lastLine)
+                it = warningLines_.erase(it);
+            else
+                ++it;
+        }
+        if (diagnosticLineStart_ == invalidPosition)
+            return;
+        const uint last = lineStart(end > start ? prevChar(end) : start);
+        if (diagnosticLineStart_ >= lineStart(start) && diagnosticLineStart_ <= last) {
+            diagnosticLineStart_ = invalidPosition;
+            diagnosticIsWarning_ = false;
+        }
     }
 
     int lineNumber(uint position) {
@@ -1686,13 +1717,20 @@ private:
     bool recording_ = false;
     bool replaying_ = false;
     uint diagnosticLineStart_ = std::numeric_limits<uint>::max();
+    bool diagnosticIsWarning_ = false;
+    std::unordered_set<int> warningLines_;
     uint executionLineStart_ = std::numeric_limits<uint>::max();
 };
 } // namespace
 
-void setEditorDiagnostic(TFileEditor *editor, int line) {
+void setEditorDiagnostic(TFileEditor *editor, int line, bool warning) {
     if (auto *syntaxEditor = dynamic_cast<SyntaxEditor *>(editor))
-        syntaxEditor->setDiagnosticLine(line);
+        syntaxEditor->setDiagnosticLine(line, warning);
+}
+
+void setEditorWarnings(TFileEditor *editor, const std::vector<int> &lines) {
+    if (auto *syntaxEditor = dynamic_cast<SyntaxEditor *>(editor))
+        syntaxEditor->setWarningLines(lines);
 }
 
 void setEditorDebugState(TFileEditor *editor, const std::vector<int> &breakpoints,
