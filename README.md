@@ -1,9 +1,9 @@
-# Retro-Turbo-C IDE 
+# TurboC/2 IDE
 
 A console IDE in the style of **Borland Turbo C**. Its interface is built on
 modern Turbo Vision port; user C and C++ sources are compiled with MinGW-w64 GCC.
 
-TurboIDE is free software under the [GNU GPL-3.0-or-later](LICENSE).
+TurboC/2 IDE is free software under the [GNU GPL-3.0-or-later](LICENSE).
 
 The goal is to recreate the authentic experience of Borland’s legendary classic IDE from the DOS era in the modern Windows console.
 There are some enhancements, such as
@@ -34,7 +34,7 @@ is needed; GitHub access is required for the first configuration.
 ## Portable releases and Universal Ctags
 
 Official x64 portable releases include a pinned Universal Ctags binary at
-`tools\ctags\ctags.exe`. TurboIDE uses that private copy for symbol navigation;
+`tools\ctags\ctags.exe`. TurboC/2 IDE uses that private copy for symbol navigation;
 it does not inspect `PATH`, so another installed `ctags.exe` cannot affect the
 IDE. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for its license and
 source information.
@@ -96,7 +96,7 @@ opens its contextual topic, falling back to legacy Contents when absent. Help
 source, context IDs, status-line hints, authoring style, merging, validation,
 and conversion instructions are in
 [HELP_CONVERSION.md](HELP_CONVERSION.md). Borland documentation describes its
-old compiler; TurboIDE uses GCC/GDB.
+old compiler; TurboC/2 IDE uses GCC/GDB.
 
 ## GCC compiler
 
@@ -113,7 +113,7 @@ linker receives a relative ASCII output name inside `.turboide-build`.
 
 ### Borland `conio.h` compatibility
 
-The release includes the GCC-adapted `coniow` implementation. TurboIDE adds it
+The release includes the GCC-adapted `coniow` implementation. TurboC/2 IDE adds it
 to every user C build, so legacy sources can use either `#include <conio.h>` or
 `#include <coniow.h>` without project configuration.
 
